@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { Trade, TradeType, TradeStatus, AVAILABLE_COLUMNS, ColumnKey, ASSETS, TradeOutcome, OrderType, Session, TagGroup } from '../types';
 import { Trash2, Settings, Eye, X, ChevronLeft, ChevronRight, Check, Download, Upload, GripVertical, MousePointer2, CheckSquare, RotateCcw, ChevronDown, ChevronUp, Filter } from 'lucide-react';
@@ -31,6 +32,9 @@ interface ColumnFilterState {
 const TradeList: React.FC<TradeListProps> = ({ trades, selectedAccountId, onTradeClick, onDeleteTrade, onDeleteTrades, onImportTrades, isTrash = false, onRestoreTrades, tagGroups = [] }) => {
   // Initialize with default columns
   const [visibleColumns, setVisibleColumns] = useState<ColumnKey[]>(['createdAt', 'type', 'pnl', 'setup', 'outcome', 'tags']);
+  
+  // State to track if columns have been loaded from persistence to prevent overwriting with defaults on init
+  const [columnsLoaded, setColumnsLoaded] = useState(false);
 
   const [isColumnModalOpen, setIsColumnModalOpen] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -59,16 +63,17 @@ const TradeList: React.FC<TradeListProps> = ({ trades, selectedAccountId, onTrad
           const cols = await getSetting<ColumnKey[]>('pipsuite_visible_columns', ['createdAt', 'type', 'pnl', 'setup', 'outcome', 'tags']);
           // Ensure 'symbol' is filtered out if it was previously saved, as it's now fixed
           setVisibleColumns(cols.filter((col: string) => col !== 'symbol'));
+          setColumnsLoaded(true);
       };
       loadColumns();
   }, []);
 
   // Save visible columns whenever they change (debounce slightly could be good but not critical for simple pref)
   useEffect(() => {
-    if (visibleColumns.length > 0) {
+    if (columnsLoaded && visibleColumns.length > 0) {
         saveSetting('pipsuite_visible_columns', visibleColumns);
     }
-  }, [visibleColumns]);
+  }, [visibleColumns, columnsLoaded]);
 
   // Close filter dropdown when clicking outside
   useEffect(() => {

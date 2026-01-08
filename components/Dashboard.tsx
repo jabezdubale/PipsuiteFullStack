@@ -35,6 +35,7 @@ import {
   GripHorizontal,
   Timer
 } from 'lucide-react';
+import { getSetting, saveSetting } from '../services/storageService';
 
 interface DashboardProps {
   stats: TradeStats; // Global stats from parent (used for fallback or comparison if needed)
@@ -217,8 +218,45 @@ const Dashboard: React.FC<DashboardProps> = ({ stats: initialStats, trades, tagG
       'assetMatrix', 'tags', 'heatmap', 'hourly', 'daily', 'expectancy', 'patience', 'holdTimeDistribution', 'holdTime'
   ]);
   const [draggedWidget, setDraggedWidget] = useState<string | null>(null);
+  
+  // Persistence Loading State
+  const [isSettingsLoaded, setIsSettingsLoaded] = useState(false);
 
   const userTimezone = Intl.DateTimeFormat().resolvedOptions().timeZone;
+
+  // --- PERSISTENCE ---
+  useEffect(() => {
+    const loadSettings = async () => {
+        const savedOrder = await getSetting('pipsuite_dashboard_order', [
+            'assetMatrix', 'tags', 'heatmap', 'hourly', 'daily', 'expectancy', 'patience', 'holdTimeDistribution', 'holdTime'
+        ]);
+        const savedVisibility = await getSetting('pipsuite_dashboard_visibility', {
+            assetMatrix: true, tags: true, heatmap: true, hourly: true, daily: true, expectancy: true, patience: true, holdTimeDistribution: true, holdTime: true,
+        });
+        
+        // Merge defaults in case new widgets were added since last save
+        setWidgetOrder(prev => {
+            const missing = prev.filter(key => !savedOrder.includes(key));
+            return [...savedOrder, ...missing];
+        });
+        
+        setVisibleWidgets(prev => ({...prev, ...savedVisibility}));
+        setIsSettingsLoaded(true);
+    };
+    loadSettings();
+  }, []);
+
+  useEffect(() => {
+      if (isSettingsLoaded) {
+          saveSetting('pipsuite_dashboard_order', widgetOrder);
+      }
+  }, [widgetOrder, isSettingsLoaded]);
+
+  useEffect(() => {
+      if (isSettingsLoaded) {
+          saveSetting('pipsuite_dashboard_visibility', visibleWidgets);
+      }
+  }, [visibleWidgets, isSettingsLoaded]);
 
   // --- GLOBAL FILTER LOGIC ---
   const dashboardTrades = useMemo(() => {

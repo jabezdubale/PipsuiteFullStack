@@ -30,12 +30,20 @@ interface ColumnFilterState {
 }
 
 const TradeList: React.FC<TradeListProps> = ({ trades, selectedAccountId, onTradeClick, onDeleteTrade, onDeleteTrades, onImportTrades, isTrash = false, onRestoreTrades, tagGroups = [] }) => {
-  // Initialize with default columns
-  const [visibleColumns, setVisibleColumns] = useState<ColumnKey[]>(['createdAt', 'type', 'pnl', 'setup', 'outcome', 'tags']);
+  // Initialize with persisted columns from LocalStorage synchronously
+  const [visibleColumns, setVisibleColumns] = useState<ColumnKey[]>(() => {
+      try {
+          const saved = localStorage.getItem('pipsuite_visible_columns');
+          if (saved) {
+              const cols = JSON.parse(saved);
+              // Filter out 'symbol' in case it was saved previously, as it's now a fixed column
+              return cols.filter((col: string) => col !== 'symbol');
+          }
+      } catch (e) {}
+      // Default columns
+      return ['createdAt', 'type', 'pnl', 'setup', 'outcome', 'tags'];
+  });
   
-  // State to track if columns have been loaded from persistence to prevent overwriting with defaults on init
-  const [columnsLoaded, setColumnsLoaded] = useState(false);
-
   const [isColumnModalOpen, setIsColumnModalOpen] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -57,23 +65,10 @@ const TradeList: React.FC<TradeListProps> = ({ trades, selectedAccountId, onTrad
   const [expandedFilterTagGroups, setExpandedFilterTagGroups] = useState<Set<string>>(new Set()); // For accordion in tag filter
   const filterDropdownRef = useRef<HTMLDivElement>(null);
 
-  // Load visible columns from DB
+  // Persist visible columns to LocalStorage on change
   useEffect(() => {
-      const loadColumns = async () => {
-          const cols = await getSetting<ColumnKey[]>('pipsuite_visible_columns', ['createdAt', 'type', 'pnl', 'setup', 'outcome', 'tags']);
-          // Ensure 'symbol' is filtered out if it was previously saved, as it's now fixed
-          setVisibleColumns(cols.filter((col: string) => col !== 'symbol'));
-          setColumnsLoaded(true);
-      };
-      loadColumns();
-  }, []);
-
-  // Save visible columns whenever they change (debounce slightly could be good but not critical for simple pref)
-  useEffect(() => {
-    if (columnsLoaded && visibleColumns.length > 0) {
-        saveSetting('pipsuite_visible_columns', visibleColumns);
-    }
-  }, [visibleColumns, columnsLoaded]);
+    localStorage.setItem('pipsuite_visible_columns', JSON.stringify(visibleColumns));
+  }, [visibleColumns]);
 
   // Close filter dropdown when clicking outside
   useEffect(() => {

@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import Layout from './components/Layout';
 import Dashboard from './components/Dashboard';
@@ -33,12 +34,30 @@ function App() {
   // Selection State
   const [selectedAccountId, setSelectedAccountId] = useState<string>('');
 
-  // Filter State - Default to Current Month for clean UI
+  // Filter State - Load synchronously from LocalStorage to prevent flicker
   const [startDate, setStartDate] = useState(() => {
+      try {
+          const savedRange = localStorage.getItem('pipsuite_date_range');
+          if (savedRange) {
+              const parsed = JSON.parse(savedRange);
+              return parsed.start;
+          }
+      } catch (e) {}
       const now = new Date();
       return new Date(now.getFullYear(), now.getMonth(), 1).toISOString().split('T')[0];
   });
-  const [endDate, setEndDate] = useState(new Date().toISOString().split('T')[0]);
+
+  const [endDate, setEndDate] = useState(() => {
+      try {
+          const savedRange = localStorage.getItem('pipsuite_date_range');
+          if (savedRange) {
+              const parsed = JSON.parse(savedRange);
+              return parsed.end;
+          }
+      } catch (e) {}
+      const now = new Date();
+      return new Date(now.getFullYear(), now.getMonth() + 1, 0).toISOString().split('T')[0];
+  });
 
   // Calendar State
   const [currentCalendarMonth, setCurrentCalendarMonth] = useState(new Date());
@@ -57,8 +76,12 @@ function App() {
   const [tradesToDelete, setTradesToDelete] = useState<string[]>([]);
   const [accountToDelete, setAccountToDelete] = useState<Account | null>(null);
 
-  // Theme State
-  const [isDarkMode, setIsDarkMode] = useState(true);
+  // Theme State - Load synchronously from LocalStorage
+  const [isDarkMode, setIsDarkMode] = useState(() => {
+      const savedTheme = localStorage.getItem('pipsuite_theme');
+      return savedTheme ? savedTheme === 'dark' : true; // Default to dark
+  });
+  
   const [user, setUser] = useState<User | null>(null);
 
   // Price Fetching State
@@ -80,20 +103,9 @@ function App() {
       setIsLoading(true);
       try {
         // 1. Settings & User
-        const [themePref, userProfile, datePref] = await Promise.all([
-            getSetting<string>('pipsuite_theme', 'dark'),
-            getSetting<User | null>('pipsuite_user', null),
-            getSetting<{start: string, end: string} | null>('pipsuite_date_range', null)
-        ]);
-
-        setIsDarkMode(themePref === 'dark');
+        // Note: Theme and Date Range are now handled via useState initializer (LocalStorage)
+        const userProfile = await getSetting<User | null>('pipsuite_user', null);
         setUser(userProfile);
-
-        // Restore date range if it was saved (Fixes disappearing trades bug)
-        if (datePref) {
-            setStartDate(datePref.start);
-            setEndDate(datePref.end);
-        }
 
         // 2. Data
         const [loadedAccounts, loadedTrades, loadedTags, loadedStrategies] = await Promise.all([
@@ -278,11 +290,11 @@ function App() {
     }
   }, [isDarkMode]);
 
-  // Date Range Handling with Persistence
+  // Date Range Handling with Persistence (LocalStorage for Device Specificity)
   const handleDateRangeChange = (newStart: string, newEnd: string) => {
       setStartDate(newStart);
       setEndDate(newEnd);
-      saveSetting('pipsuite_date_range', { start: newStart, end: newEnd });
+      localStorage.setItem('pipsuite_date_range', JSON.stringify({ start: newStart, end: newEnd }));
   };
 
   // Trades Filtering
@@ -901,7 +913,7 @@ function App() {
   const toggleTheme = () => {
       const newTheme = !isDarkMode ? 'dark' : 'light';
       setIsDarkMode(!isDarkMode);
-      saveSetting('pipsuite_theme', newTheme);
+      localStorage.setItem('pipsuite_theme', newTheme);
   };
 
   const handleUserUpdate = (userData: Partial<User>) => {

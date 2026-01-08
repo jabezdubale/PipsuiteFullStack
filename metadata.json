@@ -1,0 +1,7 @@
+{
+  "name": "PipSuite",
+  "description": "Professional trading journal with multi-account support, calendar views, and advanced analytics.",
+  "requestFramePermissions": [
+    "clipboard-read"
+  ]
+}

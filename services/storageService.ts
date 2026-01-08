@@ -120,10 +120,11 @@ export const saveTrade = async (trade: Trade): Promise<Trade[]> => {
 };
 
 export const saveTrades = async (newTrades: Trade[]): Promise<Trade[]> => {
-    for (const trade of newTrades) {
-        await saveTrade(trade);
-    }
-    return getTrades();
+    // Uses the batch import endpoint for efficiency and reliability
+    return api<Trade[]>('/trades/batch', {
+        method: 'POST',
+        body: JSON.stringify({ trades: newTrades })
+    });
 };
 
 export const deleteTrade = async (id: string): Promise<Trade[]> => {

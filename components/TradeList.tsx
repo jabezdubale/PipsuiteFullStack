@@ -89,7 +89,7 @@ const TradeList: React.FC<TradeListProps> = ({ trades, selectedAccountId, onTrad
       };
   }, []);
 
-  // Helper to extract comparable value for filtering
+  // Helper to extract column value for filtering/sorting
   const getCellValue = (trade: Trade, key: ColumnKey | 'symbol'): any => {
       if (key === 'symbol') return trade.symbol;
       if (key === 'rr') {
@@ -480,29 +480,58 @@ const TradeList: React.FC<TradeListProps> = ({ trades, selectedAccountId, onTrad
           const text = event.target?.result as string;
           if (!text) return;
           
-          const lines = text.split('\n').filter(l => l.trim());
-          if (lines.length < 2) return;
-
-          // CSV Parser handling quotes
-          const parseLine = (line: string) => {
-              const row: string[] = [];
+          // Robust CSV Parsing Logic: Handles quotes with newlines and commas correctly
+          const parseCSV = (csvText: string) => {
+              const rows: string[][] = [];
+              let currentRow: string[] = [];
               let currentVal = '';
               let insideQuotes = false;
-              for (const char of line) {
+              
+              // Normalize line endings to \n
+              const normalizedText = csvText.replace(/\r\n/g, '\n').replace(/\r/g, '\n');
+
+              for (let i = 0; i < normalizedText.length; i++) {
+                  const char = normalizedText[i];
+                  const nextChar = normalizedText[i + 1];
+
                   if (char === '"') {
-                      insideQuotes = !insideQuotes;
+                      if (insideQuotes && nextChar === '"') {
+                          // Escaped quote: "" -> "
+                          currentVal += '"';
+                          i++; // Skip next quote
+                      } else {
+                          // Toggle quote state
+                          insideQuotes = !insideQuotes;
+                      }
                   } else if (char === ',' && !insideQuotes) {
-                      row.push(currentVal.trim());
+                      // Field separator
+                      currentRow.push(currentVal.trim());
+                      currentVal = '';
+                  } else if (char === '\n' && !insideQuotes) {
+                      // End of row
+                      currentRow.push(currentVal.trim());
+                      // Only push if row has data (skip empty lines)
+                      if (currentRow.length > 1 || (currentRow.length === 1 && currentRow[0] !== '')) {
+                          rows.push(currentRow);
+                      }
+                      currentRow = [];
                       currentVal = '';
                   } else {
                       currentVal += char;
                   }
               }
-              row.push(currentVal.trim());
-              return row;
+              // Flush last row if file doesn't end with newline
+              if (currentVal || currentRow.length > 0) {
+                  currentRow.push(currentVal.trim());
+                  rows.push(currentRow);
+              }
+              return rows;
           };
 
-          const headers = parseLine(lines[0]).map(h => h.toLowerCase().replace(/^"|"$/g, '').trim());
+          const rows = parseCSV(text);
+          if (rows.length < 2) return; // Need at least header + 1 row
+
+          const headers = rows[0].map(h => h.toLowerCase().trim());
           const getIndex = (possibleNames: string[]) => headers.findIndex(h => possibleNames.includes(h));
 
           const idx = {
@@ -521,7 +550,7 @@ const TradeList: React.FC<TradeListProps> = ({ trades, selectedAccountId, onTrad
             outcome: getIndex(['outcome', 'result']),
             orderType: getIndex(['order type']),
             setup: getIndex(['strategy', 'setup']),
-            mainPnl: getIndex(['core profit', 'core p&l', 'gross pnl']), // Added 'core p&l'
+            mainPnl: getIndex(['core profit', 'core p&l', 'gross pnl']), 
             fees: getIndex(['fees', 'commission', 'swap']),
             pnl: getIndex(['net p&l', 'net pnl', 'pnl']),
             notes: getIndex(['technical notes', 'notes']),
@@ -530,14 +559,16 @@ const TradeList: React.FC<TradeListProps> = ({ trades, selectedAccountId, onTrad
           };
 
           const newTrades: Trade[] = [];
-          for (let i = 1; i < lines.length; i++) {
-              const row = parseLine(lines[i]);
-              if (row.length < 2) continue;
+          
+          // Start from index 1 (skip header)
+          for (let i = 1; i < rows.length; i++) {
+              const row = rows[i];
+              if (row.length < 2) continue; // Skip malformed empty rows
 
               const getValue = (index: number) => {
                   if (index === -1) return undefined;
-                  const val = row[index];
-                  return val ? val.replace(/^"|"$/g, '') : undefined;
+                  // Remove quotes if they wrapped the value (handled by parser mostly, but double check)
+                  return row[index];
               };
 
               const outcomeStr = (getValue(idx.outcome) || '').toLowerCase();
@@ -555,7 +586,7 @@ const TradeList: React.FC<TradeListProps> = ({ trades, selectedAccountId, onTrad
                   if (outcomeStr.includes('win')) status = TradeStatus.WIN;
                   else if (outcomeStr.includes('loss')) status = TradeStatus.LOSS;
                   else if (outcomeStr.includes('break')) status = TradeStatus.BREAK_EVEN;
-                  else status = TradeStatus.WIN; // Default fallback for generic 'closed'
+                  else status = TradeStatus.WIN; 
               }
 
               const parseDate = (d: string | undefined) => {
@@ -600,7 +631,7 @@ const TradeList: React.FC<TradeListProps> = ({ trades, selectedAccountId, onTrad
           }
 
           if (newTrades.length > 0) {
-              window.alert("When Importing trades the app will adjust the tags");
+              window.alert(`Found ${newTrades.length} valid trades. Importing now...`);
               
               // Apply automatic tagging logic to imported trades
               const processedTrades = newTrades.map(t => {
@@ -617,6 +648,8 @@ const TradeList: React.FC<TradeListProps> = ({ trades, selectedAccountId, onTrad
               });
 
               onImportTrades(processedTrades);
+          } else {
+              window.alert("No valid trades found in the file.");
           }
       };
       

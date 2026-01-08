@@ -39,6 +39,23 @@ const toCamelCase = (row) => {
     return newRow;
 };
 
+// Helper to parse trade rows from DB to ensure numbers are numbers (not strings)
+const parseTradeRow = (row) => {
+    const t = toCamelCase(row);
+    t.entryPrice = parseFloat(t.entryPrice);
+    t.exitPrice = t.exitPrice ? parseFloat(t.exitPrice) : undefined;
+    t.pnl = parseFloat(t.pnl);
+    t.quantity = parseFloat(t.quantity);
+    t.fees = parseFloat(t.fees || '0');
+    t.mainPnl = t.mainPnl ? parseFloat(t.mainPnl) : undefined;
+    t.stopLoss = t.stopLoss ? parseFloat(t.stopLoss) : undefined;
+    t.takeProfit = t.takeProfit ? parseFloat(t.takeProfit) : undefined;
+    t.leverage = t.leverage ? parseFloat(t.leverage) : undefined;
+    t.riskPercentage = t.riskPercentage ? parseFloat(t.riskPercentage) : undefined;
+    t.balance = t.balance ? parseFloat(t.balance) : undefined;
+    return t;
+};
+
 // Helper to convert camelCase trade object to snake_case for DB insert
 const mapTradeToParams = (t) => [
     t.id, t.accountId, t.symbol, t.type, t.status, t.outcome,
@@ -218,24 +235,7 @@ app.delete('/api/accounts/:id', async (req, res) => {
 app.get('/api/trades', async (req, res) => {
     try {
         const result = await req.db.query('SELECT * FROM trades ORDER BY entry_date DESC');
-        const trades = result.rows.map(row => {
-            const t = toCamelCase(row);
-            t.entryPrice = parseFloat(t.entryPrice);
-            t.exitPrice = t.exitPrice ? parseFloat(t.exitPrice) : undefined;
-            t.pnl = parseFloat(t.pnl);
-            t.quantity = parseFloat(t.quantity);
-            // Parse other decimals that might come as strings from Postgres
-            t.fees = parseFloat(t.fees || '0');
-            t.mainPnl = t.mainPnl ? parseFloat(t.mainPnl) : undefined;
-            t.stopLoss = t.stopLoss ? parseFloat(t.stopLoss) : undefined;
-            t.takeProfit = t.takeProfit ? parseFloat(t.takeProfit) : undefined;
-            t.leverage = t.leverage ? parseFloat(t.leverage) : undefined;
-            t.riskPercentage = t.riskPercentage ? parseFloat(t.riskPercentage) : undefined;
-            t.balance = t.balance ? parseFloat(t.balance) : undefined;
-            
-            return t;
-        });
-        res.json(trades);
+        res.json(result.rows.map(parseTradeRow));
     } catch (err) {
         if (err.code === '42P01') return res.json([]);
         console.error(err);
@@ -246,8 +246,8 @@ app.get('/api/trades', async (req, res) => {
 app.post('/api/trades', async (req, res) => {
     const t = req.body;
     try {
-        await req.db.query(
-            `INSERT INTO trades (
+        const queryText = `
+            INSERT INTO trades (
                 id, account_id, symbol, type, status, outcome,
                 entry_price, exit_price, stop_loss, take_profit, quantity,
                 fees, main_pnl, pnl, balance,
@@ -272,37 +272,79 @@ app.post('/api/trades', async (req, res) => {
                 notes = EXCLUDED.notes, emotional_notes = EXCLUDED.emotional_notes,
                 tags = EXCLUDED.tags, screenshots = EXCLUDED.screenshots, partials = EXCLUDED.partials,
                 is_deleted = EXCLUDED.is_deleted, deleted_at = EXCLUDED.deleted_at, is_balance_updated = EXCLUDED.is_balance_updated
-            `,
-            mapTradeToParams(t)
-        );
+        `;
+        await req.db.query(queryText, mapTradeToParams(t));
         const result = await req.db.query('SELECT * FROM trades ORDER BY entry_date DESC');
-        res.json(result.rows.map(row => {
-            const tr = toCamelCase(row);
-            tr.entryPrice = parseFloat(tr.entryPrice);
-            tr.exitPrice = tr.exitPrice ? parseFloat(tr.exitPrice) : undefined;
-            tr.pnl = parseFloat(tr.pnl);
-            tr.quantity = parseFloat(tr.quantity);
-            tr.fees = parseFloat(tr.fees || '0');
-            tr.mainPnl = tr.mainPnl ? parseFloat(tr.mainPnl) : undefined;
-            tr.stopLoss = tr.stopLoss ? parseFloat(tr.stopLoss) : undefined;
-            tr.takeProfit = tr.takeProfit ? parseFloat(tr.takeProfit) : undefined;
-            tr.leverage = tr.leverage ? parseFloat(tr.leverage) : undefined;
-            tr.riskPercentage = tr.riskPercentage ? parseFloat(tr.riskPercentage) : undefined;
-            tr.balance = tr.balance ? parseFloat(tr.balance) : undefined;
-            return tr;
-        }));
+        res.json(result.rows.map(parseTradeRow));
     } catch (err) {
         console.error(err);
         res.status(500).json({ error: err.message });
     }
 });
 
+// BATCH IMPORT TRADES
+app.post('/api/trades/batch', async (req, res) => {
+    const { trades } = req.body;
+    if (!trades || !Array.isArray(trades)) {
+        return res.status(400).json({ error: "Invalid data format. Expected array of trades." });
+    }
+
+    const client = await req.db.connect();
+    try {
+        await client.query('BEGIN');
+        
+        const queryText = `
+            INSERT INTO trades (
+                id, account_id, symbol, type, status, outcome,
+                entry_price, exit_price, stop_loss, take_profit, quantity,
+                fees, main_pnl, pnl, balance,
+                created_at, entry_date, exit_date, entry_time, exit_time,
+                entry_session, exit_session, order_type, setup,
+                leverage, risk_percentage, notes, emotional_notes,
+                tags, screenshots, partials,
+                is_deleted, deleted_at, is_balance_updated
+            ) VALUES (
+                $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15,
+                $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27, $28,
+                $29, $30, $31, $32, $33, $34
+            ) ON CONFLICT (id) DO UPDATE SET
+                symbol = EXCLUDED.symbol, type = EXCLUDED.type, status = EXCLUDED.status, outcome = EXCLUDED.outcome,
+                entry_price = EXCLUDED.entry_price, exit_price = EXCLUDED.exit_price, 
+                stop_loss = EXCLUDED.stop_loss, take_profit = EXCLUDED.take_profit, quantity = EXCLUDED.quantity,
+                fees = EXCLUDED.fees, main_pnl = EXCLUDED.main_pnl, pnl = EXCLUDED.pnl, balance = EXCLUDED.balance,
+                entry_date = EXCLUDED.entry_date, exit_date = EXCLUDED.exit_date,
+                entry_time = EXCLUDED.entry_time, exit_time = EXCLUDED.exit_time,
+                entry_session = EXCLUDED.entry_session, exit_session = EXCLUDED.exit_session,
+                order_type = EXCLUDED.order_type, setup = EXCLUDED.setup,
+                notes = EXCLUDED.notes, emotional_notes = EXCLUDED.emotional_notes,
+                tags = EXCLUDED.tags, screenshots = EXCLUDED.screenshots, partials = EXCLUDED.partials,
+                is_deleted = EXCLUDED.is_deleted, deleted_at = EXCLUDED.deleted_at, is_balance_updated = EXCLUDED.is_balance_updated
+        `;
+
+        for (const t of trades) {
+            await client.query(queryText, mapTradeToParams(t));
+        }
+
+        await client.query('COMMIT');
+        
+        const result = await client.query('SELECT * FROM trades ORDER BY entry_date DESC');
+        res.json(result.rows.map(parseTradeRow));
+    } catch (err) {
+        await client.query('ROLLBACK');
+        console.error(err);
+        res.status(500).json({ error: "Batch import failed: " + err.message });
+    } finally {
+        client.release();
+    }
+});
+
+// BATCH DELETE TRADES
 app.delete('/api/trades/batch', async (req, res) => {
     const { ids } = req.body;
     try {
         await req.db.query('DELETE FROM trades WHERE id = ANY($1)', [ids]);
         const result = await req.db.query('SELECT * FROM trades ORDER BY entry_date DESC');
-        res.json(result.rows.map(toCamelCase));
+        res.json(result.rows.map(parseTradeRow));
     } catch (err) {
         res.status(500).json({ error: err.message });
     }
@@ -313,7 +355,7 @@ app.delete('/api/trades/:id', async (req, res) => {
     try {
         await req.db.query('DELETE FROM trades WHERE id = $1', [id]);
         const result = await req.db.query('SELECT * FROM trades ORDER BY entry_date DESC');
-        res.json(result.rows.map(toCamelCase));
+        res.json(result.rows.map(parseTradeRow));
     } catch (err) {
         res.status(500).json({ error: err.message });
     }

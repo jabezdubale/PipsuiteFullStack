@@ -88,10 +88,11 @@ function App() {
     const loadData = async () => {
       setIsLoading(true);
       try {
-        // 1. Settings & User (Date range from DB)
-        const [userProfile, datePref] = await Promise.all([
+        // 1. Settings & User (Date range & Active Tab from DB)
+        const [userProfile, datePref, activeTabPref] = await Promise.all([
             getSetting<User | null>('pipsuite_user', null),
-            getSetting<{start: string, end: string} | null>('pipsuite_date_range', null)
+            getSetting<{start: string, end: string} | null>('pipsuite_date_range', null),
+            getSetting<string>('pipsuite_active_tab', 'dashboard')
         ]);
         
         setUser(userProfile);
@@ -99,6 +100,10 @@ function App() {
         if (datePref) {
             setStartDate(datePref.start);
             setEndDate(datePref.end);
+        }
+
+        if (activeTabPref) {
+            setActiveTab(activeTabPref);
         }
 
         // 2. Data
@@ -289,6 +294,12 @@ function App() {
       setStartDate(newStart);
       setEndDate(newEnd);
       saveSetting('pipsuite_date_range', { start: newStart, end: newEnd });
+  };
+
+  const handleTabChange = (tab: string) => {
+      setActiveTab(tab);
+      setSubView('list');
+      saveSetting('pipsuite_active_tab', tab);
   };
 
   // Trades Filtering
@@ -1063,7 +1074,7 @@ function App() {
   return (
     <Layout 
       activeTab={activeTab} 
-      setActiveTab={(tab) => { setActiveTab(tab); setSubView('list'); }}
+      setActiveTab={handleTabChange}
       accounts={accounts} 
       selectedAccountId={selectedAccountId}
       setSelectedAccountId={setSelectedAccountId}

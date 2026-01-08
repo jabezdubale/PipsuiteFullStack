@@ -88,12 +88,12 @@ function App() {
     const loadData = async () => {
       setIsLoading(true);
       try {
-        // 1. Settings & User (Date range & Active Tab & Selected Account from DB)
-        const [userProfile, datePref, activeTabPref, savedAccountId] = await Promise.all([
+        // 1. Settings & User (Date range & Active Tab from DB)
+        // NOTE: Account ID is NOT fetched from DB to keep it device-specific (localStorage)
+        const [userProfile, datePref, activeTabPref] = await Promise.all([
             getSetting<User | null>('pipsuite_user', null),
             getSetting<{start: string, end: string} | null>('pipsuite_date_range', null),
-            getSetting<string>('pipsuite_active_tab', 'dashboard'),
-            getSetting<string>('pipsuite_selected_account_id', '')
+            getSetting<string>('pipsuite_active_tab', 'dashboard')
         ]);
         
         setUser(userProfile);
@@ -129,7 +129,9 @@ function App() {
         setTagGroups(loadedTags);
         setStrategies(loadedStrategies);
         
-        // Account Selection Logic
+        // Account Selection Logic (Device Specific - localStorage)
+        const savedAccountId = localStorage.getItem('pipsuite_selected_account_id');
+        
         if (savedAccountId && loadedAccounts.some(acc => acc.id === savedAccountId)) {
             setSelectedAccountId(savedAccountId);
         } else if (loadedAccounts.length > 0) {
@@ -191,10 +193,10 @@ function App() {
     };
   }, [isAddModalOpen]);
 
-  // Handler to change account and persist setting
+  // Handler to change account and persist setting locally (Device Specific)
   const handleAccountChange = (id: string) => {
       setSelectedAccountId(id);
-      saveSetting('pipsuite_selected_account_id', id);
+      localStorage.setItem('pipsuite_selected_account_id', id);
   };
 
   // AI Analysis Handler

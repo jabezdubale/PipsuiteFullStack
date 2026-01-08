@@ -224,6 +224,15 @@ app.get('/api/trades', async (req, res) => {
             t.exitPrice = t.exitPrice ? parseFloat(t.exitPrice) : undefined;
             t.pnl = parseFloat(t.pnl);
             t.quantity = parseFloat(t.quantity);
+            // Parse other decimals that might come as strings from Postgres
+            t.fees = parseFloat(t.fees || '0');
+            t.mainPnl = t.mainPnl ? parseFloat(t.mainPnl) : undefined;
+            t.stopLoss = t.stopLoss ? parseFloat(t.stopLoss) : undefined;
+            t.takeProfit = t.takeProfit ? parseFloat(t.takeProfit) : undefined;
+            t.leverage = t.leverage ? parseFloat(t.leverage) : undefined;
+            t.riskPercentage = t.riskPercentage ? parseFloat(t.riskPercentage) : undefined;
+            t.balance = t.balance ? parseFloat(t.balance) : undefined;
+            
             return t;
         });
         res.json(trades);
@@ -267,7 +276,21 @@ app.post('/api/trades', async (req, res) => {
             mapTradeToParams(t)
         );
         const result = await req.db.query('SELECT * FROM trades ORDER BY entry_date DESC');
-        res.json(result.rows.map(toCamelCase));
+        res.json(result.rows.map(row => {
+            const tr = toCamelCase(row);
+            tr.entryPrice = parseFloat(tr.entryPrice);
+            tr.exitPrice = tr.exitPrice ? parseFloat(tr.exitPrice) : undefined;
+            tr.pnl = parseFloat(tr.pnl);
+            tr.quantity = parseFloat(tr.quantity);
+            tr.fees = parseFloat(tr.fees || '0');
+            tr.mainPnl = tr.mainPnl ? parseFloat(tr.mainPnl) : undefined;
+            tr.stopLoss = tr.stopLoss ? parseFloat(tr.stopLoss) : undefined;
+            tr.takeProfit = tr.takeProfit ? parseFloat(tr.takeProfit) : undefined;
+            tr.leverage = tr.leverage ? parseFloat(tr.leverage) : undefined;
+            tr.riskPercentage = tr.riskPercentage ? parseFloat(tr.riskPercentage) : undefined;
+            tr.balance = tr.balance ? parseFloat(tr.balance) : undefined;
+            return tr;
+        }));
     } catch (err) {
         console.error(err);
         res.status(500).json({ error: err.message });

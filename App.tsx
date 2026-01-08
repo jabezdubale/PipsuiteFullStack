@@ -34,27 +34,13 @@ function App() {
   // Selection State
   const [selectedAccountId, setSelectedAccountId] = useState<string>('');
 
-  // Filter State - Load synchronously from LocalStorage to prevent flicker
+  // Filter State - Default to Current Month (DB Persistence)
   const [startDate, setStartDate] = useState(() => {
-      try {
-          const savedRange = localStorage.getItem('pipsuite_date_range');
-          if (savedRange) {
-              const parsed = JSON.parse(savedRange);
-              return parsed.start;
-          }
-      } catch (e) {}
       const now = new Date();
       return new Date(now.getFullYear(), now.getMonth(), 1).toISOString().split('T')[0];
   });
 
   const [endDate, setEndDate] = useState(() => {
-      try {
-          const savedRange = localStorage.getItem('pipsuite_date_range');
-          if (savedRange) {
-              const parsed = JSON.parse(savedRange);
-              return parsed.end;
-          }
-      } catch (e) {}
       const now = new Date();
       return new Date(now.getFullYear(), now.getMonth() + 1, 0).toISOString().split('T')[0];
   });
@@ -76,7 +62,7 @@ function App() {
   const [tradesToDelete, setTradesToDelete] = useState<string[]>([]);
   const [accountToDelete, setAccountToDelete] = useState<Account | null>(null);
 
-  // Theme State - Load synchronously from LocalStorage
+  // Theme State - LocalStorage (Device Specific)
   const [isDarkMode, setIsDarkMode] = useState(() => {
       const savedTheme = localStorage.getItem('pipsuite_theme');
       return savedTheme ? savedTheme === 'dark' : true; // Default to dark
@@ -102,10 +88,18 @@ function App() {
     const loadData = async () => {
       setIsLoading(true);
       try {
-        // 1. Settings & User
-        // Note: Theme and Date Range are now handled via useState initializer (LocalStorage)
-        const userProfile = await getSetting<User | null>('pipsuite_user', null);
+        // 1. Settings & User (Date range from DB)
+        const [userProfile, datePref] = await Promise.all([
+            getSetting<User | null>('pipsuite_user', null),
+            getSetting<{start: string, end: string} | null>('pipsuite_date_range', null)
+        ]);
+        
         setUser(userProfile);
+
+        if (datePref) {
+            setStartDate(datePref.start);
+            setEndDate(datePref.end);
+        }
 
         // 2. Data
         const [loadedAccounts, loadedTrades, loadedTags, loadedStrategies] = await Promise.all([
@@ -290,11 +284,11 @@ function App() {
     }
   }, [isDarkMode]);
 
-  // Date Range Handling with Persistence (LocalStorage for Device Specificity)
+  // Date Range Handling with Persistence (Database)
   const handleDateRangeChange = (newStart: string, newEnd: string) => {
       setStartDate(newStart);
       setEndDate(newEnd);
-      localStorage.setItem('pipsuite_date_range', JSON.stringify({ start: newStart, end: newEnd }));
+      saveSetting('pipsuite_date_range', { start: newStart, end: newEnd });
   };
 
   // Trades Filtering

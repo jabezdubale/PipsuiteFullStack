@@ -1,7 +1,7 @@
 
 import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { Trade, TradeType, TradeStatus, AVAILABLE_COLUMNS, ColumnKey, ASSETS, TradeOutcome, OrderType, Session, TagGroup } from '../types';
-import { Trash2, Settings, Eye, X, ChevronLeft, ChevronRight, Check, Download, Upload, GripVertical, MousePointer2, CheckSquare, RotateCcw, ChevronDown, ChevronUp, Filter } from 'lucide-react';
+import { Trash2, Settings, Eye, X, ChevronLeft, ChevronRight, Check, Download, Upload, GripVertical, MousePointer2, CheckSquare, RotateCcw, ChevronDown, ChevronUp, Filter, Loader2 } from 'lucide-react';
 import { calculateAutoTags } from '../utils/autoTagLogic';
 import { getSetting, saveSetting } from '../services/storageService';
 
@@ -30,20 +30,12 @@ interface ColumnFilterState {
 }
 
 const TradeList: React.FC<TradeListProps> = ({ trades, selectedAccountId, onTradeClick, onDeleteTrade, onDeleteTrades, onImportTrades, isTrash = false, onRestoreTrades, tagGroups = [] }) => {
-  // Initialize with persisted columns from LocalStorage synchronously
-  const [visibleColumns, setVisibleColumns] = useState<ColumnKey[]>(() => {
-      try {
-          const saved = localStorage.getItem('pipsuite_visible_columns');
-          if (saved) {
-              const cols = JSON.parse(saved);
-              // Filter out 'symbol' in case it was saved previously, as it's now a fixed column
-              return cols.filter((col: string) => col !== 'symbol');
-          }
-      } catch (e) {}
-      // Default columns
-      return ['createdAt', 'type', 'pnl', 'setup', 'outcome', 'tags'];
-  });
+  // Initialize with default columns
+  const [visibleColumns, setVisibleColumns] = useState<ColumnKey[]>(['createdAt', 'type', 'pnl', 'setup', 'outcome', 'tags']);
   
+  // State to track if columns have been loaded from persistence to prevent overwriting with defaults on init
+  const [columnsLoaded, setColumnsLoaded] = useState(false);
+
   const [isColumnModalOpen, setIsColumnModalOpen] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -65,10 +57,23 @@ const TradeList: React.FC<TradeListProps> = ({ trades, selectedAccountId, onTrad
   const [expandedFilterTagGroups, setExpandedFilterTagGroups] = useState<Set<string>>(new Set()); // For accordion in tag filter
   const filterDropdownRef = useRef<HTMLDivElement>(null);
 
-  // Persist visible columns to LocalStorage on change
+  // Load visible columns from DB
   useEffect(() => {
-    localStorage.setItem('pipsuite_visible_columns', JSON.stringify(visibleColumns));
-  }, [visibleColumns]);
+      const loadColumns = async () => {
+          const cols = await getSetting<ColumnKey[]>('pipsuite_visible_columns', ['createdAt', 'type', 'pnl', 'setup', 'outcome', 'tags']);
+          // Ensure 'symbol' is filtered out if it was previously saved, as it's now fixed
+          setVisibleColumns(cols.filter((col: string) => col !== 'symbol'));
+          setColumnsLoaded(true);
+      };
+      loadColumns();
+  }, []);
+
+  // Save visible columns whenever they change (only after loaded)
+  useEffect(() => {
+    if (columnsLoaded && visibleColumns.length > 0) {
+        saveSetting('pipsuite_visible_columns', visibleColumns);
+    }
+  }, [visibleColumns, columnsLoaded]);
 
   // Close filter dropdown when clicking outside
   useEffect(() => {
@@ -992,6 +997,18 @@ const TradeList: React.FC<TradeListProps> = ({ trades, selectedAccountId, onTrad
   };
 
   const activeFilterCount = Object.keys(activeFilters).length;
+
+  // --- Loading Guard ---
+  if (!columnsLoaded) {
+      return (
+          <div className="flex h-[300px] w-full items-center justify-center border border-border rounded-xl bg-surface">
+              <div className="flex flex-col items-center gap-3">
+                  <Loader2 className="animate-spin text-primary" size={28} />
+                  <p className="text-textMuted text-sm font-medium">Loading Journal...</p>
+              </div>
+          </div>
+      );
+  }
 
   return (
     <div className="space-y-4 flex flex-col">

@@ -33,8 +33,10 @@ import {
   ListFilter,
   Check,
   GripHorizontal,
-  Timer
+  Timer,
+  Loader2
 } from 'lucide-react';
+import { getSetting, saveSetting } from '../services/storageService';
 
 interface DashboardProps {
   stats: TradeStats; // Global stats from parent (used for fallback or comparison if needed)
@@ -199,46 +201,53 @@ const Dashboard: React.FC<DashboardProps> = ({ stats: initialStats, trades, tagG
   const [isConfigOpen, setIsConfigOpen] = useState(false);
   const [hourlyFormat12, setHourlyFormat12] = useState(true);
   
-  // Widget Visibility State (Loaded Synchronously from LocalStorage)
-  const [visibleWidgets, setVisibleWidgets] = useState(() => {
-      try {
-          const saved = localStorage.getItem('pipsuite_dashboard_visibility');
-          if (saved) return JSON.parse(saved);
-      } catch (e) {}
-      return {
-          assetMatrix: true, tags: true, heatmap: true, hourly: true, daily: true, expectancy: true, patience: true, holdTimeDistribution: true, holdTime: true,
-      };
+  // Widget State
+  const [visibleWidgets, setVisibleWidgets] = useState({
+      assetMatrix: true, tags: true, heatmap: true, hourly: true, daily: true, expectancy: true, patience: true, holdTimeDistribution: true, holdTime: true,
   });
 
-  // Widget Order State (Loaded Synchronously from LocalStorage)
-  const [widgetOrder, setWidgetOrder] = useState(() => {
-      try {
-          const saved = localStorage.getItem('pipsuite_dashboard_order');
-          if (saved) {
-              const parsed = JSON.parse(saved);
-              // Ensure we include any missing keys that might have been added in updates
-              const defaultOrder = ['assetMatrix', 'tags', 'heatmap', 'hourly', 'daily', 'expectancy', 'patience', 'holdTimeDistribution', 'holdTime'];
-              const missing = defaultOrder.filter(key => !parsed.includes(key));
-              return [...parsed, ...missing];
-          }
-      } catch (e) {}
-      return [
-          'assetMatrix', 'tags', 'heatmap', 'hourly', 'daily', 'expectancy', 'patience', 'holdTimeDistribution', 'holdTime'
-      ];
-  });
-
+  const [widgetOrder, setWidgetOrder] = useState([
+      'assetMatrix', 'tags', 'heatmap', 'hourly', 'daily', 'expectancy', 'patience', 'holdTimeDistribution', 'holdTime'
+  ]);
   const [draggedWidget, setDraggedWidget] = useState<string | null>(null);
+  
+  const [isSettingsLoaded, setIsSettingsLoaded] = useState(false);
   
   const userTimezone = Intl.DateTimeFormat().resolvedOptions().timeZone;
 
-  // --- PERSISTENCE (LocalStorage) ---
+  // --- PERSISTENCE (DB) ---
   useEffect(() => {
-      localStorage.setItem('pipsuite_dashboard_order', JSON.stringify(widgetOrder));
-  }, [widgetOrder]);
+    const loadSettings = async () => {
+        const savedOrder = await getSetting('pipsuite_dashboard_order', [
+            'assetMatrix', 'tags', 'heatmap', 'hourly', 'daily', 'expectancy', 'patience', 'holdTimeDistribution', 'holdTime'
+        ]);
+        const savedVisibility = await getSetting('pipsuite_dashboard_visibility', {
+            assetMatrix: true, tags: true, heatmap: true, hourly: true, daily: true, expectancy: true, patience: true, holdTimeDistribution: true, holdTime: true,
+        });
+        
+        // Merge defaults in case new widgets were added since last save
+        setWidgetOrder(prev => {
+            const missing = prev.filter(key => !savedOrder.includes(key));
+            return [...savedOrder, ...missing];
+        });
+        
+        setVisibleWidgets(prev => ({...prev, ...savedVisibility}));
+        setIsSettingsLoaded(true);
+    };
+    loadSettings();
+  }, []);
 
   useEffect(() => {
-      localStorage.setItem('pipsuite_dashboard_visibility', JSON.stringify(visibleWidgets));
-  }, [visibleWidgets]);
+      if (isSettingsLoaded) {
+          saveSetting('pipsuite_dashboard_order', widgetOrder);
+      }
+  }, [widgetOrder, isSettingsLoaded]);
+
+  useEffect(() => {
+      if (isSettingsLoaded) {
+          saveSetting('pipsuite_dashboard_visibility', visibleWidgets);
+      }
+  }, [visibleWidgets, isSettingsLoaded]);
 
   // --- GLOBAL FILTER LOGIC ---
   const dashboardTrades = useMemo(() => {
@@ -1036,6 +1045,17 @@ const Dashboard: React.FC<DashboardProps> = ({ stats: initialStats, trades, tagG
           default: return null;
       }
   };
+
+  if (!isSettingsLoaded) {
+      return (
+          <div className="flex h-[500px] w-full items-center justify-center">
+              <div className="flex flex-col items-center gap-3">
+                  <Loader2 className="animate-spin text-primary" size={32} />
+                  <p className="text-textMuted text-sm font-medium">Loading Dashboard Layout...</p>
+              </div>
+          </div>
+      );
+  }
 
   return (
     <div className="space-y-6 animate-in fade-in duration-500 pb-20">

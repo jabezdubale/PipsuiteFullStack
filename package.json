@@ -2,11 +2,11 @@
   "name": "pipsuite",
   "version": "1.0.0",
   "description": "Professional trading journal",
-  "main": "server/index.js",
+  "main": "api/index.js",
   "scripts": {
-    "start": "node server/index.js",
+    "start": "node api/index.js",
     "dev": "concurrently \"npm run server\" \"vite\"",
-    "server": "node server/index.js",
+    "server": "node api/index.js",
     "build": "vite build",
     "lint": "eslint . --ext ts,tsx --report-unused-disable-directives --max-warnings 0",
     "preview": "vite preview"

@@ -146,17 +146,18 @@ const Layout: React.FC<LayoutProps> = ({
       <div className="flex-1 flex flex-col h-full overflow-hidden relative">
         {/* Header (Mobile & Desktop Filters) */}
         <header className="h-14 border-b border-border bg-surface flex items-center justify-between px-4 md:px-6 z-20 shrink-0">
-          <div className="flex items-center gap-2 md:hidden">
-            <div className="w-8 h-8 bg-primary rounded-lg flex items-center justify-center">
-              <CandlestickChart className="text-white" size={20} />
+          
+          {/* Left: Mobile Logo & Desktop Account Select */}
+          <div className="flex items-center gap-4">
+            <div className="flex items-center gap-2 md:hidden">
+                <div className="w-8 h-8 bg-primary rounded-lg flex items-center justify-center">
+                <CandlestickChart className="text-white" size={20} />
+                </div>
+                <span className="font-bold">PipSuite</span>
             </div>
-            <span className="font-bold">PipSuite</span>
-          </div>
 
-          {/* Global Filters */}
-          <div className="hidden md:flex items-center gap-4">
-             {/* Account Select */}
-             <div className="relative">
+            {/* Desktop Account Selector */}
+            <div className="hidden md:block relative">
                  <select 
                     value={selectedAccountId} 
                     onChange={(e) => setSelectedAccountId(e.target.value)}
@@ -172,10 +173,13 @@ const Layout: React.FC<LayoutProps> = ({
                  </select>
                  <ChevronDown className="absolute right-2 top-1/2 -translate-y-1/2 text-textMuted pointer-events-none" size={12} />
              </div>
-             
-             {/* Balance Display */}
+          </div>
+
+          {/* Right: Balance & Mobile Menu */}
+          <div className="flex items-center gap-4">
+             {/* Desktop Balance Display */}
              {selectedAccount && (
-                 <div className="flex items-center gap-3 ml-4 pl-4 border-l border-border h-8">
+                 <div className="hidden md:flex items-center gap-3 pl-4 border-l border-border h-8">
                      <span className="text-lg font-bold text-textMain font-mono tracking-tight">
                          ${selectedAccount.balance.toLocaleString()}
                      </span>
@@ -188,10 +192,7 @@ const Layout: React.FC<LayoutProps> = ({
                      </button>
                  </div>
              )}
-          </div>
 
-          {/* Right Side: Mobile Menu */}
-          <div className="flex items-center gap-4">
              <button onClick={() => setIsMobileMenuOpen(!isMobileMenuOpen)} className="md:hidden text-textMuted hover:text-textMain">
                {isMobileMenuOpen ? <X size={20} /> : <Menu size={20} />}
              </button>

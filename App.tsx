@@ -88,11 +88,12 @@ function App() {
     const loadData = async () => {
       setIsLoading(true);
       try {
-        // 1. Settings & User (Date range & Active Tab from DB)
-        const [userProfile, datePref, activeTabPref] = await Promise.all([
+        // 1. Settings & User (Date range & Active Tab & Selected Account from DB)
+        const [userProfile, datePref, activeTabPref, savedAccountId] = await Promise.all([
             getSetting<User | null>('pipsuite_user', null),
             getSetting<{start: string, end: string} | null>('pipsuite_date_range', null),
-            getSetting<string>('pipsuite_active_tab', 'dashboard')
+            getSetting<string>('pipsuite_active_tab', 'dashboard'),
+            getSetting<string>('pipsuite_selected_account_id', '')
         ]);
         
         setUser(userProfile);
@@ -128,8 +129,10 @@ function App() {
         setTagGroups(loadedTags);
         setStrategies(loadedStrategies);
         
-        // Auto-select first account if none selected
-        if (loadedAccounts.length > 0 && !selectedAccountId) {
+        // Account Selection Logic
+        if (savedAccountId && loadedAccounts.some(acc => acc.id === savedAccountId)) {
+            setSelectedAccountId(savedAccountId);
+        } else if (loadedAccounts.length > 0) {
             setSelectedAccountId(loadedAccounts[0].id);
         }
 
@@ -187,6 +190,12 @@ function App() {
       window.removeEventListener("paste", handlePaste);
     };
   }, [isAddModalOpen]);
+
+  // Handler to change account and persist setting
+  const handleAccountChange = (id: string) => {
+      setSelectedAccountId(id);
+      saveSetting('pipsuite_selected_account_id', id);
+  };
 
   // AI Analysis Handler
   const handleAnalyzeImage = async (base64: string) => {
@@ -555,7 +564,7 @@ function App() {
       try {
         const updatedAccounts = await saveAccount(account);
         setAccounts(updatedAccounts);
-        setSelectedAccountId(account.id);
+        handleAccountChange(account.id);
       } catch (e) {
         alert("Failed to create account.");
       }
@@ -575,11 +584,11 @@ function App() {
           setTrades(prev => prev.filter(t => t.accountId !== accountToDelete.id));
           
           if (fallbackAccountId && newAccounts.find(a => a.id === fallbackAccountId)) {
-              setSelectedAccountId(fallbackAccountId);
+              handleAccountChange(fallbackAccountId);
           } else if (newAccounts.length > 0) {
-              setSelectedAccountId(newAccounts[0].id);
+              handleAccountChange(newAccounts[0].id);
           } else {
-              setSelectedAccountId('');
+              handleAccountChange('');
           }
           
           setAccountToDelete(null);
@@ -1077,7 +1086,7 @@ function App() {
       setActiveTab={handleTabChange}
       accounts={accounts} 
       selectedAccountId={selectedAccountId}
-      setSelectedAccountId={setSelectedAccountId}
+      setSelectedAccountId={handleAccountChange}
       onAddTradeClick={() => setIsAddModalOpen(true)}
       startDate={startDate}
       setStartDate={(d) => handleDateRangeChange(d, endDate)}

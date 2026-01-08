@@ -65,6 +65,72 @@ app.use(async (req, res, next) => {
 
 // --- API Routes ---
 
+// INITIALIZE DB (Run this once to create tables)
+app.get('/api/init', async (req, res) => {
+    try {
+        await req.db.query(`
+            CREATE TABLE IF NOT EXISTS app_settings (key VARCHAR(255) PRIMARY KEY, value JSONB);
+            
+            CREATE TABLE IF NOT EXISTS accounts (
+                id VARCHAR(255) PRIMARY KEY,
+                name VARCHAR(255) NOT NULL,
+                currency VARCHAR(10) DEFAULT 'USD',
+                balance DECIMAL(20, 2) DEFAULT 0,
+                is_demo BOOLEAN DEFAULT false,
+                type VARCHAR(50) DEFAULT 'Real'
+            );
+            
+            CREATE TABLE IF NOT EXISTS monthly_notes (
+                month_key VARCHAR(20) PRIMARY KEY,
+                goals TEXT,
+                notes TEXT,
+                review TEXT
+            );
+            
+            CREATE TABLE IF NOT EXISTS trades (
+                id VARCHAR(255) PRIMARY KEY,
+                account_id VARCHAR(255) REFERENCES accounts(id) ON DELETE CASCADE,
+                symbol VARCHAR(20),
+                type VARCHAR(20),
+                status VARCHAR(20),
+                outcome VARCHAR(20),
+                entry_price DECIMAL(20, 5),
+                exit_price DECIMAL(20, 5),
+                stop_loss DECIMAL(20, 5),
+                take_profit DECIMAL(20, 5),
+                quantity DECIMAL(20, 5),
+                fees DECIMAL(20, 2),
+                main_pnl DECIMAL(20, 2),
+                pnl DECIMAL(20, 2),
+                balance DECIMAL(20, 2),
+                created_at TIMESTAMP,
+                entry_date TIMESTAMP,
+                exit_date TIMESTAMP,
+                entry_time VARCHAR(20),
+                exit_time VARCHAR(20),
+                entry_session VARCHAR(50),
+                exit_session VARCHAR(50),
+                order_type VARCHAR(50),
+                setup VARCHAR(100),
+                leverage DECIMAL(10, 2),
+                risk_percentage DECIMAL(10, 2),
+                notes TEXT,
+                emotional_notes TEXT,
+                tags JSONB DEFAULT '[]',
+                screenshots JSONB DEFAULT '[]',
+                partials JSONB DEFAULT '[]',
+                is_deleted BOOLEAN DEFAULT false,
+                deleted_at TIMESTAMP,
+                is_balance_updated BOOLEAN DEFAULT false
+            );
+        `);
+        res.status(200).send("Database tables initialized successfully! You can now use the app.");
+    } catch (err) {
+        console.error(err);
+        res.status(500).json({ error: "Failed to initialize database: " + err.message });
+    }
+});
+
 // GENERIC SETTINGS (Theme, Columns, User Profile, etc.)
 app.get('/api/settings/:key', async (req, res) => {
     const { key } = req.params;

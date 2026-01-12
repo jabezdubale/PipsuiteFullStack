@@ -31,6 +31,9 @@ interface LayoutProps {
   toggleTheme: () => void;
   isDarkMode: boolean;
   onUpdateBalance: (amount: number, type: 'deposit' | 'withdraw') => void;
+  startDate: string;
+  endDate: string;
+  onDateChange: (start: string, end: string) => void;
 }
 
 const Layout: React.FC<LayoutProps> = ({ 
@@ -43,7 +46,10 @@ const Layout: React.FC<LayoutProps> = ({
   onAddTradeClick,
   toggleTheme,
   isDarkMode,
-  onUpdateBalance
+  onUpdateBalance,
+  startDate,
+  endDate,
+  onDateChange
 }) => {
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
@@ -164,6 +170,34 @@ const Layout: React.FC<LayoutProps> = ({
                    )}
                  </select>
                  <ChevronDown className="absolute right-2 top-1/2 -translate-y-1/2 text-textMuted pointer-events-none" size={12} />
+             </div>
+
+             {/* Global Date Filter */}
+             <div className="hidden md:flex items-center gap-2 bg-surfaceHighlight border border-border p-1 rounded-md">
+                <input 
+                    type="date" 
+                    value={startDate}
+                    onChange={(e) => onDateChange(e.target.value, endDate)}
+                    className="bg-transparent border-none text-xs text-textMain focus:ring-0 cursor-pointer font-medium p-0.5 w-24"
+                    title="Start Date"
+                />
+                <span className="text-textMuted text-xs">-</span>
+                <input 
+                    type="date" 
+                    value={endDate}
+                    onChange={(e) => onDateChange(startDate, e.target.value)}
+                    className="bg-transparent border-none text-xs text-textMain focus:ring-0 cursor-pointer font-medium p-0.5 w-24"
+                    title="End Date"
+                />
+                {(startDate || endDate) && (
+                    <button 
+                        onClick={() => onDateChange('', '')} 
+                        className="ml-1 p-0.5 hover:bg-border rounded text-textMuted hover:text-textMain"
+                        title="Clear Date Filter"
+                    >
+                        <X size={12} />
+                    </button>
+                )}
              </div>
           </div>
 

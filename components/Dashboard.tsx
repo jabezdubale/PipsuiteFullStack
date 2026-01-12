@@ -39,12 +39,9 @@ import {
 import { getSetting, saveSetting } from '../services/storageService';
 
 interface DashboardProps {
-  stats: TradeStats; // Note: Global stats are less relevant now that Dashboard filters locally
+  stats: TradeStats;
   trades: Trade[];
   tagGroups: TagGroup[];
-  startDate: string;
-  endDate: string;
-  onDateChange: (start: string, end: string) => void;
 }
 
 interface MatrixStats {
@@ -190,12 +187,12 @@ const WidgetContainer = ({ title, icon: Icon, children, className = '', tooltipT
   </div>
 );
 
-const Dashboard: React.FC<DashboardProps> = ({ stats: initialStats, trades, tagGroups, startDate, endDate, onDateChange }) => {
-  // Global Filters (Local to Dashboard)
+const Dashboard: React.FC<DashboardProps> = ({ stats: initialStats, trades, tagGroups }) => {
+  // Global Filters
   const [activeTagFilter, setActiveTagFilter] = useState<string[]>([]);
   const [activeAssetFilter, setActiveAssetFilter] = useState<string[]>([]);
 
-  // Widget Specific Filters (Visualization Only)
+  // Widget Specific Filters
   const [visibleSetups, setVisibleSetups] = useState<string[]>([]);
   
   const [isConfigOpen, setIsConfigOpen] = useState(false);
@@ -248,36 +245,24 @@ const Dashboard: React.FC<DashboardProps> = ({ stats: initialStats, trades, tagG
       }
   }, [visibleWidgets, isSettingsLoaded]);
 
-  // --- FILTER LOGIC (Applied locally in Dashboard) ---
+  // --- FILTER LOGIC ---
   const dashboardTrades = useMemo(() => {
       let filtered = trades;
 
-      // 1. Date Filter (Applied HERE, only for dashboard, ONLY if both dates present)
-      if (startDate && endDate) {
-          const start = new Date(startDate);
-          const end = new Date(endDate);
-          end.setHours(23, 59, 59, 999); // Include entire end day
-
-          filtered = filtered.filter(t => {
-              const tDate = new Date(t.entryDate || t.createdAt);
-              return tDate >= start && tDate <= end;
-          });
-      }
-
-      // 2. Tag Filter (AND Logic - Intersection)
+      // 1. Tag Filter (AND Logic - Intersection)
       if (activeTagFilter.length > 0) {
           filtered = filtered.filter(t => activeTagFilter.every(tag => t.tags.includes(tag)));
       }
 
-      // 3. Asset Filter (OR Logic - Union)
+      // 2. Asset Filter (OR Logic - Union)
       if (activeAssetFilter.length > 0) {
           filtered = filtered.filter(t => activeAssetFilter.includes(t.symbol));
       }
 
       return filtered;
-  }, [trades, activeTagFilter, activeAssetFilter, startDate, endDate]);
+  }, [trades, activeTagFilter, activeAssetFilter]);
 
-  // --- LOCAL STATS RECALCULATION (Based on dashboardTrades) ---
+  // --- STATS RECALCULATION (Based on dashboardTrades) ---
   const dashboardStats = useMemo(() => {
       const totalTrades = dashboardTrades.length;
       if (totalTrades === 0) {
@@ -527,7 +512,6 @@ const Dashboard: React.FC<DashboardProps> = ({ stats: initialStats, trades, tagG
       const stats: Record<string, MatrixStats> = {};
       items.forEach(i => { stats[i] = { count: 0, wins: 0, pnl: 0 }; });
       
-      // Use dashboardTrades (filtered by date) here
       dashboardTrades.forEach(t => { 
           getItems(t).forEach(item => {
               if (!stats[item]) stats[item] = { count: 0, wins: 0, pnl: 0 };
@@ -741,15 +725,9 @@ const Dashboard: React.FC<DashboardProps> = ({ stats: initialStats, trades, tagG
         <div>
           <h2 className="text-2xl font-bold text-textMain">Trading Performance</h2>
           <div className="text-textMuted text-xs mt-1 flex flex-wrap gap-2 items-center">
-             {(activeTagFilter.length > 0 || activeAssetFilter.length > 0 || (startDate && endDate)) ? (
+             {(activeTagFilter.length > 0 || activeAssetFilter.length > 0) ? (
                  <>
                     Filters:
-                    {startDate && endDate && (
-                       <span className="px-1.5 py-0.5 bg-surfaceHighlight border border-border rounded font-medium flex items-center gap-1">
-                           {new Date(startDate).toLocaleDateString()} - {new Date(endDate).toLocaleDateString()}
-                           <X size={10} className="cursor-pointer" onClick={() => onDateChange('', '')} />
-                       </span>
-                    )}
                     {activeTagFilter.map(tag => (
                         <span key={tag} className="px-1.5 py-0.5 bg-primary/10 text-primary border border-primary/20 rounded font-medium flex items-center gap-1">
                             {tag} <X size={10} className="cursor-pointer" onClick={() => toggleTagFilter(tag)} />
@@ -761,32 +739,13 @@ const Dashboard: React.FC<DashboardProps> = ({ stats: initialStats, trades, tagG
                         </span>
                     ))}
                  </>
-             ) : 'Global Analysis (All Time)'}
+             ) : 'Global Analysis'}
           </div>
         </div>
         <div className="flex gap-2 items-center flex-wrap">
-            {/* Local Dashboard Date Filter */}
-            <div className="flex items-center gap-2 bg-surface border border-border p-1 rounded-lg mr-2">
-                <input 
-                    type="date" 
-                    value={startDate}
-                    onChange={(e) => onDateChange(e.target.value, endDate)}
-                    className="bg-transparent border-none text-xs text-textMain focus:ring-0 cursor-pointer font-medium p-1 w-28"
-                    title="Start Date"
-                />
-                <span className="text-textMuted text-xs">-</span>
-                <input 
-                    type="date" 
-                    value={endDate}
-                    onChange={(e) => onDateChange(startDate, e.target.value)}
-                    className="bg-transparent border-none text-xs text-textMain focus:ring-0 cursor-pointer font-medium p-1 w-28"
-                    title="End Date"
-                />
-            </div>
-
-            {(activeTagFilter.length > 0 || activeAssetFilter.length > 0 || (startDate && endDate)) && (
+            {(activeTagFilter.length > 0 || activeAssetFilter.length > 0) && (
                 <button 
-                   onClick={() => { setActiveTagFilter([]); setActiveAssetFilter([]); onDateChange('', ''); }}
+                   onClick={() => { setActiveTagFilter([]); setActiveAssetFilter([]); }}
                    className="flex items-center gap-2 px-3 py-1.5 bg-loss/10 text-loss rounded-lg text-xs font-bold border border-loss/20 hover:bg-loss/20"
                 >
                     <X size={12} /> Clear Filters

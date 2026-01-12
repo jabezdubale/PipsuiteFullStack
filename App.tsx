@@ -494,7 +494,7 @@ function App() {
 
   const [currentMonth, setCurrentMonth] = useState(new Date());
   
-  // Initialize Dashboard Date Range as empty (show all by default)
+  // Global Date Filter State
   const [startDate, setStartDate] = useState('');
   const [endDate, setEndDate] = useState('');
 
@@ -551,20 +551,33 @@ function App() {
 
   // --- Data Helpers ---
   
-  // PRIMARY DATA SOURCE FOR ALL TABS: Filters only by Account and Deleted Status.
-  // Date filtering is removed here to ensure Journal/Calendar see all data.
-  // The Dashboard component will handle its own local date filtering.
+  // PRIMARY DATA SOURCE FOR ALL TABS: Filters by Account AND Date AND Deleted Status
+  // This ensures ALL views (Dashboard, Journal, Calendar) respect the global date filter
   const currentAccountTrades = useMemo(() => {
       if (!selectedAccountId) return [];
-      return trades.filter(t => t.accountId === selectedAccountId && !t.isDeleted);
-  }, [trades, selectedAccountId]);
+      
+      let filtered = trades.filter(t => t.accountId === selectedAccountId && !t.isDeleted);
+
+      if (startDate && endDate) {
+          const start = new Date(startDate);
+          const end = new Date(endDate);
+          end.setHours(23, 59, 59, 999); // Include full end day
+
+          filtered = filtered.filter(t => {
+              const tradeDate = new Date(t.entryDate || t.createdAt);
+              return tradeDate >= start && tradeDate <= end;
+          });
+      }
+
+      return filtered;
+  }, [trades, selectedAccountId, startDate, endDate]);
   
   const trashTrades = useMemo(() => {
     if (!selectedAccountId) return [];
     return trades.filter(t => t.accountId === selectedAccountId && t.isDeleted);
   }, [trades, selectedAccountId]);
 
-  // Global stats passed to dashboard (These stats are now redundant if dashboard calculates locally, keeping for safety)
+  // Global stats passed to dashboard
   const stats = useMemo(() => {
       const wins = currentAccountTrades.filter(t => t.pnl > 0);
       const losses = currentAccountTrades.filter(t => t.pnl < 0);
@@ -678,9 +691,6 @@ function App() {
                 stats={stats} 
                 trades={currentAccountTrades} 
                 tagGroups={tagGroups}
-                startDate={startDate}
-                endDate={endDate}
-                onDateChange={handleDateRangeChange}
               />;
       case 'calendar':
         return (
@@ -764,9 +774,6 @@ function App() {
                 stats={stats} 
                 trades={currentAccountTrades} 
                 tagGroups={tagGroups}
-                startDate={startDate}
-                endDate={endDate}
-                onDateChange={handleDateRangeChange}
               />;
     }
   };
@@ -784,6 +791,9 @@ function App() {
       toggleTheme={toggleTheme}
       isDarkMode={isDarkMode}
       onUpdateBalance={handleUpdateBalance}
+      startDate={startDate}
+      endDate={endDate}
+      onDateChange={handleDateRangeChange}
     >
       {renderContent()}
 

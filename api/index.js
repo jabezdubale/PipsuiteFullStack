@@ -1,3 +1,4 @@
+
 require('dotenv').config();
 const express = require('express');
 const cors = require('cors');
@@ -56,18 +57,21 @@ const parseTradeRow = (row) => {
     return t;
 };
 
+// Helper to safely get value or null (Postgres doesn't like undefined)
+const v = (val) => (val === undefined ? null : val);
+
 // Helper to convert camelCase trade object to snake_case for DB insert
 const mapTradeToParams = (t) => [
-    t.id, t.accountId, t.symbol, t.type, t.status, t.outcome,
-    t.entryPrice, t.exitPrice, t.stopLoss, t.takeProfit, t.quantity,
-    t.fees, t.mainPnl, t.pnl, t.balance,
-    t.createdAt, t.entryDate, t.exitDate, t.entryTime, t.exitTime,
-    t.entrySession, t.exitSession, t.orderType, t.setup,
-    t.leverage, t.riskPercentage, t.notes, t.emotionalNotes,
+    v(t.id), v(t.accountId), v(t.symbol), v(t.type), v(t.status), v(t.outcome),
+    v(t.entryPrice), v(t.exitPrice), v(t.stopLoss), v(t.takeProfit), v(t.quantity),
+    v(t.fees), v(t.mainPnl), v(t.pnl), v(t.balance),
+    v(t.createdAt), v(t.entryDate), v(t.exitDate), v(t.entryTime), v(t.exitTime),
+    v(t.entrySession), v(t.exitSession), v(t.orderType), v(t.setup),
+    v(t.leverage), v(t.riskPercentage), v(t.notes), v(t.emotionalNotes),
     JSON.stringify(t.tags || []),
     JSON.stringify(t.screenshots || []),
     JSON.stringify(t.partials || []),
-    t.isDeleted || false, t.deletedAt, t.isBalanceUpdated || false
+    t.isDeleted || false, v(t.deletedAt), t.isBalanceUpdated || false
 ];
 
 // --- Middleware to check DB connection ---

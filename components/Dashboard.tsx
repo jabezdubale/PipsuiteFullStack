@@ -252,15 +252,17 @@ const Dashboard: React.FC<DashboardProps> = ({ stats: initialStats, trades, tagG
   const dashboardTrades = useMemo(() => {
       let filtered = trades;
 
-      // 1. Date Filter (Applied HERE, only for dashboard)
-      const start = new Date(startDate);
-      const end = new Date(endDate);
-      end.setHours(23, 59, 59, 999); // Include entire end day
+      // 1. Date Filter (Applied HERE, only for dashboard, ONLY if both dates present)
+      if (startDate && endDate) {
+          const start = new Date(startDate);
+          const end = new Date(endDate);
+          end.setHours(23, 59, 59, 999); // Include entire end day
 
-      filtered = filtered.filter(t => {
-          const tDate = new Date(t.entryDate || t.createdAt);
-          return tDate >= start && tDate <= end;
-      });
+          filtered = filtered.filter(t => {
+              const tDate = new Date(t.entryDate || t.createdAt);
+              return tDate >= start && tDate <= end;
+          });
+      }
 
       // 2. Tag Filter (AND Logic - Intersection)
       if (activeTagFilter.length > 0) {
@@ -663,7 +665,7 @@ const Dashboard: React.FC<DashboardProps> = ({ stats: initialStats, trades, tagG
                               })}
                           </tbody>
                       </table>
-                      {Object.values(assetStats).every(s => s.count === 0) && <div className="p-6 text-center text-textMuted italic text-xs">No assets found in current view.</div>}
+                      {Object.values(assetStats).every((s: MatrixStats) => s.count === 0) && <div className="p-6 text-center text-textMuted italic text-xs">No assets found in current view.</div>}
                   </div>
               </WidgetContainer>
           );
@@ -688,6 +690,7 @@ const Dashboard: React.FC<DashboardProps> = ({ stats: initialStats, trades, tagG
                                           <tr className="bg-surfaceHighlight/30"><td colSpan={4} className="py-1 px-2 text-[9px] font-bold text-textMuted uppercase tracking-widest">{group.name}</td></tr>
                                           {activeTags.map(tag => {
                                               const s = tagStats[tag];
+                                              if (!s) return null;
                                               const winRate = (s.wins / s.count) * 100;
                                               const isActive = activeTagFilter.includes(tag);
                                               return (
@@ -738,9 +741,15 @@ const Dashboard: React.FC<DashboardProps> = ({ stats: initialStats, trades, tagG
         <div>
           <h2 className="text-2xl font-bold text-textMain">Trading Performance</h2>
           <div className="text-textMuted text-xs mt-1 flex flex-wrap gap-2 items-center">
-             {(activeTagFilter.length > 0 || activeAssetFilter.length > 0) ? (
+             {(activeTagFilter.length > 0 || activeAssetFilter.length > 0 || (startDate && endDate)) ? (
                  <>
                     Filters:
+                    {startDate && endDate && (
+                       <span className="px-1.5 py-0.5 bg-surfaceHighlight border border-border rounded font-medium flex items-center gap-1">
+                           {new Date(startDate).toLocaleDateString()} - {new Date(endDate).toLocaleDateString()}
+                           <X size={10} className="cursor-pointer" onClick={() => onDateChange('', '')} />
+                       </span>
+                    )}
                     {activeTagFilter.map(tag => (
                         <span key={tag} className="px-1.5 py-0.5 bg-primary/10 text-primary border border-primary/20 rounded font-medium flex items-center gap-1">
                             {tag} <X size={10} className="cursor-pointer" onClick={() => toggleTagFilter(tag)} />
@@ -752,7 +761,7 @@ const Dashboard: React.FC<DashboardProps> = ({ stats: initialStats, trades, tagG
                         </span>
                     ))}
                  </>
-             ) : 'Global Analysis (Filtered by Dashboard Date Range)'}
+             ) : 'Global Analysis (All Time)'}
           </div>
         </div>
         <div className="flex gap-2 items-center flex-wrap">
@@ -775,9 +784,9 @@ const Dashboard: React.FC<DashboardProps> = ({ stats: initialStats, trades, tagG
                 />
             </div>
 
-            {(activeTagFilter.length > 0 || activeAssetFilter.length > 0) && (
+            {(activeTagFilter.length > 0 || activeAssetFilter.length > 0 || (startDate && endDate)) && (
                 <button 
-                   onClick={() => { setActiveTagFilter([]); setActiveAssetFilter([]); }}
+                   onClick={() => { setActiveTagFilter([]); setActiveAssetFilter([]); onDateChange('', ''); }}
                    className="flex items-center gap-2 px-3 py-1.5 bg-loss/10 text-loss rounded-lg text-xs font-bold border border-loss/20 hover:bg-loss/20"
                 >
                     <X size={12} /> Clear Filters

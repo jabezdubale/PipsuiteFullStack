@@ -494,9 +494,9 @@ function App() {
 
   const [currentMonth, setCurrentMonth] = useState(new Date());
   
-  // Initialize Dashboard Date Range with Current Year
-  const [startDate, setStartDate] = useState(() => new Date(new Date().getFullYear(), 0, 1).toISOString().split('T')[0]);
-  const [endDate, setEndDate] = useState(() => new Date(new Date().getFullYear(), 11, 31).toISOString().split('T')[0]);
+  // Initialize Dashboard Date Range as empty (show all by default)
+  const [startDate, setStartDate] = useState('');
+  const [endDate, setEndDate] = useState('');
 
   // Initial Load
   useEffect(() => {
@@ -553,6 +553,7 @@ function App() {
   
   // PRIMARY DATA SOURCE FOR ALL TABS: Filters only by Account and Deleted Status.
   // Date filtering is removed here to ensure Journal/Calendar see all data.
+  // The Dashboard component will handle its own local date filtering.
   const currentAccountTrades = useMemo(() => {
       if (!selectedAccountId) return [];
       return trades.filter(t => t.accountId === selectedAccountId && !t.isDeleted);
@@ -563,11 +564,8 @@ function App() {
     return trades.filter(t => t.accountId === selectedAccountId && t.isDeleted);
   }, [trades, selectedAccountId]);
 
-  // Global stats passed to dashboard (but dashboard now calculates its own filtered stats)
-  // We can keep this basic calculation for fallback or remove it if unused.
+  // Global stats passed to dashboard (These stats are now redundant if dashboard calculates locally, keeping for safety)
   const stats = useMemo(() => {
-      // NOTE: Dashboard now does its own math based on date filters.
-      // This object calculates stats for ALL TIME for the account.
       const wins = currentAccountTrades.filter(t => t.pnl > 0);
       const losses = currentAccountTrades.filter(t => t.pnl < 0);
       const totalTrades = currentAccountTrades.length;

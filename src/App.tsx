@@ -493,8 +493,10 @@ function App() {
   const [accountToDelete, setAccountToDelete] = useState<Account | null>(null);
 
   const [currentMonth, setCurrentMonth] = useState(new Date());
-  const [startDate, setStartDate] = useState(() => new Date(new Date().getFullYear(), new Date().getMonth(), 1).toISOString().split('T')[0]);
-  const [endDate, setEndDate] = useState(() => new Date(new Date().getFullYear(), new Date().getMonth() + 1, 0).toISOString().split('T')[0]);
+  
+  // Initialize with Current Year (Wider range than previous Month-only default)
+  const [startDate, setStartDate] = useState(() => new Date(new Date().getFullYear(), 0, 1).toISOString().split('T')[0]);
+  const [endDate, setEndDate] = useState(() => new Date(new Date().getFullYear(), 11, 31).toISOString().split('T')[0]);
 
   // Initial Load
   useEffect(() => {
@@ -544,8 +546,16 @@ function App() {
   // --- Data Helpers ---
   const currentAccountTrades = useMemo(() => {
       if (!selectedAccountId) return [];
-      return trades.filter(t => t.accountId === selectedAccountId && !t.isDeleted);
-  }, [trades, selectedAccountId]);
+      
+      const start = new Date(startDate).getTime();
+      const end = new Date(endDate).getTime() + (24 * 60 * 60 * 1000 - 1); // End of day
+
+      return trades.filter(t => {
+          if (t.accountId !== selectedAccountId || t.isDeleted) return false;
+          const tDate = new Date(t.entryDate).getTime();
+          return tDate >= start && tDate <= end;
+      });
+  }, [trades, selectedAccountId, startDate, endDate]);
   
   const trashTrades = useMemo(() => {
     if (!selectedAccountId) return [];

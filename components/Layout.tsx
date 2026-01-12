@@ -175,6 +175,25 @@ const Layout: React.FC<LayoutProps> = ({
              </div>
           </div>
 
+          {/* Center: Date Filters (Desktop) */}
+          <div className="hidden md:flex items-center gap-2 bg-surfaceHighlight/30 p-1 rounded-lg border border-border/50">
+              <input 
+                type="date" 
+                value={startDate}
+                onChange={(e) => setStartDate(e.target.value)}
+                className="bg-transparent border-none text-xs text-textMain focus:ring-0 cursor-pointer font-medium p-1"
+                title="Start Date"
+              />
+              <span className="text-textMuted text-xs">-</span>
+              <input 
+                type="date" 
+                value={endDate}
+                onChange={(e) => setEndDate(e.target.value)}
+                className="bg-transparent border-none text-xs text-textMain focus:ring-0 cursor-pointer font-medium p-1"
+                title="End Date"
+              />
+          </div>
+
           {/* Right: Balance & Mobile Menu */}
           <div className="flex items-center gap-4">
              {/* Desktop Balance Display */}
@@ -227,6 +246,28 @@ const Layout: React.FC<LayoutProps> = ({
                         <option value="">No Accounts</option>
                     )}
                 </select>
+                </div>
+
+                {/* Mobile Date Filters */}
+                <div className="flex gap-2">
+                    <div className="flex-1">
+                        <label className="text-xs text-textMuted mb-1 block">From</label>
+                        <input 
+                            type="date" 
+                            value={startDate}
+                            onChange={(e) => setStartDate(e.target.value)}
+                            className="w-full bg-surfaceHighlight border border-border rounded-lg p-2 text-textMain text-sm"
+                        />
+                    </div>
+                    <div className="flex-1">
+                        <label className="text-xs text-textMuted mb-1 block">To</label>
+                        <input 
+                            type="date" 
+                            value={endDate}
+                            onChange={(e) => setEndDate(e.target.value)}
+                            className="w-full bg-surfaceHighlight border border-border rounded-lg p-2 text-textMain text-sm"
+                        />
+                    </div>
                 </div>
                 
                 {/* Mobile Balance Action */}

@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect, useMemo } from 'react';
 import { 
   getAccounts, saveAccount, deleteAccount, 
@@ -20,9 +21,8 @@ import DeleteConfirmationModal from './components/DeleteConfirmationModal';
 import DeleteAccountModal from './components/DeleteAccountModal';
 import DailyViewModal from './components/DailyViewModal';
 import AICoach from './components/AICoach';
-import Roadmap from './components/Roadmap';
 import UserModal from './components/UserModal';
-import { Eraser, X, Plus, Check } from 'lucide-react';
+import { Eraser, X, Plus, Calculator, TrendingUp, TrendingDown } from 'lucide-react';
 import { calculateAutoTags } from './utils/autoTagLogic';
 import { getSessionForTime } from './utils/sessionHelpers';
 
@@ -51,25 +51,39 @@ const AddTradeSidePanel = ({
     stopLoss: '',
     takeProfit: '',
     setup: '',
-    notes: ''
+    notes: '',
+    balance: '' // For risk calc
   });
 
   useEffect(() => {
     if (isOpen) {
+        const defaultAccId = selectedAccountId || (accounts.length > 0 ? accounts[0].id : '');
+        const acc = accounts.find(a => a.id === defaultAccId);
         setFormData(prev => ({
             ...prev,
-            accountId: selectedAccountId || (accounts.length > 0 ? accounts[0].id : '')
+            accountId: defaultAccId,
+            balance: acc ? acc.balance.toString() : ''
         }));
     }
   }, [isOpen, selectedAccountId, accounts]);
 
   const handleChange = (field: string, value: any) => {
-      setFormData(prev => ({ ...prev, [field]: value }));
+      setFormData(prev => {
+          const updates = { ...prev, [field]: value };
+          // Auto-update balance if account changes
+          if (field === 'accountId') {
+              const acc = accounts.find(a => a.id === value);
+              if (acc) updates.balance = acc.balance.toString();
+          }
+          return updates;
+      });
   };
 
   const handleClearForm = () => {
+      const defaultAccId = selectedAccountId || (accounts.length > 0 ? accounts[0].id : '');
+      const acc = accounts.find(a => a.id === defaultAccId);
       setFormData({
-        accountId: selectedAccountId || (accounts.length > 0 ? accounts[0].id : ''),
+        accountId: defaultAccId,
         symbol: 'XAUUSD',
         type: TradeType.LONG,
         entryPrice: '',
@@ -78,13 +92,56 @@ const AddTradeSidePanel = ({
         stopLoss: '',
         takeProfit: '',
         setup: '',
-        notes: ''
+        notes: '',
+        balance: acc ? acc.balance.toString() : ''
       });
   };
 
+  // --- Calculations ---
+  const calculations = useMemo(() => {
+      const { symbol, entryPrice, stopLoss, takeProfit, quantity, type } = formData;
+      const asset = ASSETS.find(a => a.assetPair === symbol);
+      
+      const entry = parseFloat(entryPrice);
+      const qty = parseFloat(quantity);
+      const sl = parseFloat(stopLoss);
+      const tp = parseFloat(takeProfit);
+
+      if (!asset || isNaN(entry) || isNaN(qty)) return null;
+
+      let riskAmount = 0;
+      let rewardAmount = 0;
+      let rr = 0;
+
+      // Risk
+      if (!isNaN(sl)) {
+          const riskDist = Math.abs(entry - sl);
+          riskAmount = riskDist * asset.contractSize * qty;
+      }
+
+      // Reward
+      if (!isNaN(tp)) {
+          const rewardDist = Math.abs(tp - entry);
+          rewardAmount = rewardDist * asset.contractSize * qty;
+      }
+
+      // RR
+      if (riskAmount > 0 && rewardAmount > 0) {
+          rr = rewardAmount / riskAmount;
+      }
+
+      // Auto-detect direction if TP/SL provided but type mismatch? 
+      // (Optional: enforce type based on prices, but let's trust user selection or warn)
+      
+      return { riskAmount, rewardAmount, rr, asset };
+  }, [formData]);
+
   const handleSubmit = (e: React.FormEvent) => {
       e.preventDefault();
-      if (!formData.entryPrice || !formData.quantity) return;
+      if (!formData.entryPrice || !formData.quantity || !formData.accountId) {
+          alert("Please fill in Entry Price, Lot Size, and select an Account.");
+          return;
+      }
 
       const entryDateObj = new Date(formData.entryDate);
       const entryTime = entryDateObj.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false });
@@ -162,16 +219,16 @@ const AddTradeSidePanel = ({
                                   <button
                                     type="button"
                                     onClick={() => handleChange('type', TradeType.LONG)}
-                                    className={`flex-1 text-xs font-bold py-1.5 rounded transition-colors ${formData.type === TradeType.LONG ? 'bg-profit text-white shadow' : 'text-textMuted hover:text-textMain'}`}
+                                    className={`flex-1 text-xs font-bold py-1.5 rounded transition-colors flex items-center justify-center gap-1 ${formData.type === TradeType.LONG ? 'bg-profit text-white shadow' : 'text-textMuted hover:text-textMain'}`}
                                   >
-                                      LONG
+                                      <TrendingUp size={14} /> LONG
                                   </button>
                                   <button
                                     type="button"
                                     onClick={() => handleChange('type', TradeType.SHORT)}
-                                    className={`flex-1 text-xs font-bold py-1.5 rounded transition-colors ${formData.type === TradeType.SHORT ? 'bg-loss text-white shadow' : 'text-textMuted hover:text-textMain'}`}
+                                    className={`flex-1 text-xs font-bold py-1.5 rounded transition-colors flex items-center justify-center gap-1 ${formData.type === TradeType.SHORT ? 'bg-loss text-white shadow' : 'text-textMuted hover:text-textMain'}`}
                                   >
-                                      SHORT
+                                      <TrendingDown size={14} /> SHORT
                                   </button>
                               </div>
                           </div>
@@ -202,6 +259,28 @@ const AddTradeSidePanel = ({
                               />
                           </div>
                       </div>
+
+                      {/* Calculation Preview Box */}
+                      {calculations && (
+                          <div className="bg-surfaceHighlight/50 border border-border rounded-lg p-3 text-xs space-y-2">
+                              <div className="flex justify-between items-center">
+                                  <span className="text-textMuted font-bold uppercase flex items-center gap-1"><Calculator size={10} /> Estimates</span>
+                                  {calculations.rr > 0 && (
+                                      <span className="text-primary font-bold">1:{calculations.rr.toFixed(2)} RR</span>
+                                  )}
+                              </div>
+                              <div className="grid grid-cols-2 gap-2">
+                                  <div className="bg-background/50 p-2 rounded border border-border/50">
+                                      <span className="text-[10px] text-textMuted uppercase block">Risk</span>
+                                      <span className="font-mono font-bold text-loss">-${calculations.riskAmount.toFixed(2)}</span>
+                                  </div>
+                                  <div className="bg-background/50 p-2 rounded border border-border/50">
+                                      <span className="text-[10px] text-textMuted uppercase block">Reward</span>
+                                      <span className="font-mono font-bold text-profit">+${calculations.rewardAmount.toFixed(2)}</span>
+                                  </div>
+                              </div>
+                          </div>
+                      )}
 
                       {/* Time */}
                       <div>
@@ -264,22 +343,20 @@ const AddTradeSidePanel = ({
                           />
                       </div>
 
-                      {accounts.length > 1 && (
-                          <div>
-                              <label className="block text-xs font-medium text-textMuted mb-1">Account</label>
-                              <select 
-                                value={formData.accountId}
-                                onChange={(e) => handleChange('accountId', e.target.value)}
-                                className="w-full bg-background border border-border rounded p-2 text-sm focus:border-primary outline-none"
-                              >
-                                  {accounts.map(a => <option key={a.id} value={a.id}>{a.name} (${a.balance})</option>)}
-                              </select>
-                          </div>
-                      )}
+                      <div>
+                          <label className="block text-xs font-medium text-textMuted mb-1">Account</label>
+                          <select 
+                            value={formData.accountId}
+                            onChange={(e) => handleChange('accountId', e.target.value)}
+                            className="w-full bg-background border border-border rounded p-2 text-sm focus:border-primary outline-none"
+                            required
+                          >
+                              {accounts.map(a => <option key={a.id} value={a.id}>{a.name} (${a.balance})</option>)}
+                          </select>
+                      </div>
                   </form>
               </div>
 
-              {/* Footer provided in snippet */}
               <div className="p-4 border-t border-border flex gap-3 shrink-0 bg-surface rounded-b-xl relative">
                   {accounts.length === 0 && (
                       <div className="absolute -top-3 left-1/2 -translate-x-1/2 z-20">
@@ -428,21 +505,26 @@ function App() {
   // --- HANDLERS ---
 
   const handleSaveTrade = async (trade: Trade, shouldClose: boolean = true) => {
-    // If trade already exists, update it. If not, add it.
-    let updatedTrades: Trade[];
-    const exists = trades.find(t => t.id === trade.id);
-    
-    if (exists) {
-        updatedTrades = await saveTrade(trade);
-    } else {
-        updatedTrades = await saveTrade(trade);
-    }
-    setTrades(updatedTrades);
+    try {
+        // If trade already exists, update it. If not, add it.
+        let updatedTrades: Trade[];
+        const exists = trades.find(t => t.id === trade.id);
+        
+        if (exists) {
+            updatedTrades = await saveTrade(trade);
+        } else {
+            updatedTrades = await saveTrade(trade);
+        }
+        setTrades(updatedTrades);
 
-    if (shouldClose) {
-        setEditingTrade(null);
-        setViewingTrade(null);
-        setShowAddTrade(false);
+        if (shouldClose) {
+            setEditingTrade(null);
+            setViewingTrade(null);
+            setShowAddTrade(false);
+        }
+    } catch (e) {
+        console.error("Failed to save trade:", e);
+        alert("Failed to save trade. Please check your connection or try again.");
     }
   };
 

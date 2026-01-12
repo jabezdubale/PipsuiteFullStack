@@ -243,10 +243,7 @@ app.get('/api/trades', async (req, res) => {
 });
 
 app.post('/api/trades', async (req, res) => {
-    console.log("DEBUG: [API] Received POST /trades");
     const t = req.body;
-    console.log("DEBUG: [API] Request Body:", JSON.stringify(t, null, 2));
-    
     try {
         const queryText = `
             INSERT INTO trades (
@@ -276,15 +273,11 @@ app.post('/api/trades', async (req, res) => {
                 is_deleted = EXCLUDED.is_deleted, deleted_at = EXCLUDED.deleted_at, is_balance_updated = EXCLUDED.is_balance_updated
         `;
         const params = mapTradeToParams(t);
-        console.log("DEBUG: [API] SQL Parameters:", params);
-
         await req.db.query(queryText, params);
-        console.log("DEBUG: [API] DB Insert executed successfully");
-
         const result = await req.db.query('SELECT * FROM trades ORDER BY entry_date DESC');
         res.json(result.rows.map(parseTradeRow));
     } catch (err) {
-        console.error("DEBUG: [API] Error saving trade:", err);
+        console.error("Error saving trade:", err);
         res.status(500).json({ error: err.message });
     }
 });

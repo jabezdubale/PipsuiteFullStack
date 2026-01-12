@@ -1,3 +1,4 @@
+
 import { Trade, Account, TagGroup, MonthlyNoteData } from '../types';
 
 const API_BASE = '/api';
@@ -113,10 +114,13 @@ export const getTrades = async (): Promise<Trade[]> => {
 };
 
 export const saveTrade = async (trade: Trade): Promise<Trade[]> => {
-    return api<Trade[]>('/trades', {
+    console.log("DEBUG: storageService.saveTrade sending to API:", JSON.stringify(trade, null, 2));
+    const result = await api<Trade[]>('/trades', {
         method: 'POST',
         body: JSON.stringify(trade)
     });
+    console.log("DEBUG: storageService.saveTrade response received");
+    return result;
 };
 
 export const saveTrades = async (newTrades: Trade[]): Promise<Trade[]> => {

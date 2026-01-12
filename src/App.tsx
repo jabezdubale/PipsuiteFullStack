@@ -667,72 +667,56 @@ function App() {
       saveSetting('pipsuite_user', updatedUser);
   };
 
-  if (isLoading) return <div className="h-screen flex items-center justify-center bg-background"><Loader2 className="animate-spin text-primary" size={32}/></div>;
-
-  if (editingTrade) {
+  const renderContent = () => {
+    if (editingTrade) {
       return <TradeDetail trade={editingTrade} accounts={accounts} tagGroups={tagGroups} strategies={strategies} onSave={handleSaveTrade} onDelete={handleSoftDeleteTrade} onBack={() => setEditingTrade(null)} onUpdateBalance={handleUpdateBalance} />;
-  }
+    }
 
-  return (
-    <Layout
-      activeTab={activeTab}
-      setActiveTab={setActiveTab}
-      accounts={accounts}
-      selectedAccountId={selectedAccountId}
-      setSelectedAccountId={handleAccountChange}
-      onAddTradeClick={() => setShowAddTrade(true)} // Open unified modal
-      toggleTheme={toggleTheme}
-      isDarkMode={isDarkMode}
-      onUpdateBalance={handleUpdateBalance}
-    >
-      {activeTab === 'dashboard' && (
-          <div className="space-y-6">
-              <Dashboard 
+    switch (activeTab) {
+      case 'dashboard':
+        return <Dashboard 
                 stats={stats} 
                 trades={currentAccountTrades} 
                 tagGroups={tagGroups}
                 startDate={startDate}
                 endDate={endDate}
                 onDateChange={handleDateRangeChange}
-              />
-              <AICoach trades={currentAccountTrades} />
-          </div>
-      )}
-
-      {activeTab === 'journal' && (
+              />;
+      case 'calendar':
+        return (
+            <CalendarView 
+                trades={currentAccountTrades} 
+                currentMonth={currentMonth} 
+                setCurrentMonth={setCurrentMonth}
+                onDayClick={(dateStr) => setDailyViewDate(dateStr)}
+            />
+        );
+      case 'journal':
+        return (
           <TradeList 
-            trades={currentAccountTrades}
+            trades={currentAccountTrades} 
             selectedAccountId={selectedAccountId}
-            onTradeClick={(t) => setViewingTrade(t)}
-            onDeleteTrade={handleSoftDeleteTrade}
+            onTradeClick={(t) => setViewingTrade(t)} 
+            onDeleteTrade={handleSoftDeleteTrade} 
             onImportTrades={async (newTrades) => { await saveTrades(newTrades); setTrades(await getTrades()); }}
-            tagGroups={tagGroups}
+            tagGroups={tagGroups} 
           />
-      )}
-
-      {activeTab === 'calendar' && (
-          <CalendarView 
-             trades={currentAccountTrades}
-             currentMonth={currentMonth}
-             setCurrentMonth={setCurrentMonth}
-             onDayClick={(date) => setDailyViewDate(date)}
-          />
-      )}
-
-      {activeTab === 'trash' && (
-           <TradeList 
+        );
+      case 'trash':
+        return (
+          <TradeList 
             trades={trashTrades}
             selectedAccountId={selectedAccountId}
-            onTradeClick={(t) => setViewingTrade(t)}
-            onDeleteTrade={handlePermanentDeleteTrade}
+            onTradeClick={(t) => setViewingTrade(t)} 
+            onDeleteTrade={handlePermanentDeleteTrade} 
             onDeleteTrades={(ids) => ids.forEach(id => handlePermanentDeleteTrade(id))}
-            onRestoreTrades={handleRestoreTrades}
             isTrash={true}
+            onRestoreTrades={handleRestoreTrades}
             tagGroups={tagGroups}
           />
-      )}
-      
-      {activeTab === 'settings' && (
+        );
+      case 'settings':
+        return (
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6 pb-20">
               <div className="space-y-6">
                   <div className="bg-surface border border-border rounded-xl p-6 shadow-sm">
@@ -774,7 +758,34 @@ function App() {
                   <StrategyManager strategies={strategies} onUpdate={(s) => { saveStrategies(s); setStrategies(s); }} />
               </div>
           </div>
-      )}
+        );
+      default:
+        return <Dashboard 
+                stats={stats} 
+                trades={currentAccountTrades} 
+                tagGroups={tagGroups}
+                startDate={startDate}
+                endDate={endDate}
+                onDateChange={handleDateRangeChange}
+              />;
+    }
+  };
+
+  if (isLoading) return <div className="h-screen flex items-center justify-center bg-background"><Loader2 className="animate-spin text-primary" size={32}/></div>;
+
+  return (
+    <Layout
+      activeTab={activeTab}
+      setActiveTab={setActiveTab}
+      accounts={accounts}
+      selectedAccountId={selectedAccountId}
+      setSelectedAccountId={handleAccountChange}
+      onAddTradeClick={() => setShowAddTrade(true)} // Open unified modal
+      toggleTheme={toggleTheme}
+      isDarkMode={isDarkMode}
+      onUpdateBalance={handleUpdateBalance}
+    >
+      {renderContent()}
 
       {/* MODALS */}
       <AddTradeModal 

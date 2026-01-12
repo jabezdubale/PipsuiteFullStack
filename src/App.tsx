@@ -494,7 +494,7 @@ function App() {
 
   const [currentMonth, setCurrentMonth] = useState(new Date());
   
-  // Initialize with Current Year (Wider range than previous Month-only default)
+  // Initialize Dashboard Date Range with Current Year
   const [startDate, setStartDate] = useState(() => new Date(new Date().getFullYear(), 0, 1).toISOString().split('T')[0]);
   const [endDate, setEndDate] = useState(() => new Date(new Date().getFullYear(), 11, 31).toISOString().split('T')[0]);
 
@@ -506,6 +506,12 @@ function App() {
       setIsDarkMode(themePref === 'dark');
       const userProfile = await getSetting<User | null>('pipsuite_user', null);
       setUser(userProfile);
+      
+      const datePref = await getSetting<{start: string, end: string} | null>('pipsuite_date_range', null);
+      if (datePref) {
+          setStartDate(datePref.start);
+          setEndDate(datePref.end);
+      }
 
       const [accs, trds, tgs, strats] = await Promise.all([
           getAccounts(), getTrades(), getTagGroups(), getStrategies()
@@ -544,25 +550,24 @@ function App() {
   };
 
   // --- Data Helpers ---
+  
+  // PRIMARY DATA SOURCE FOR ALL TABS: Filters only by Account and Deleted Status.
+  // Date filtering is removed here to ensure Journal/Calendar see all data.
   const currentAccountTrades = useMemo(() => {
       if (!selectedAccountId) return [];
-      
-      const start = new Date(startDate).getTime();
-      const end = new Date(endDate).getTime() + (24 * 60 * 60 * 1000 - 1); // End of day
-
-      return trades.filter(t => {
-          if (t.accountId !== selectedAccountId || t.isDeleted) return false;
-          const tDate = new Date(t.entryDate).getTime();
-          return tDate >= start && tDate <= end;
-      });
-  }, [trades, selectedAccountId, startDate, endDate]);
+      return trades.filter(t => t.accountId === selectedAccountId && !t.isDeleted);
+  }, [trades, selectedAccountId]);
   
   const trashTrades = useMemo(() => {
     if (!selectedAccountId) return [];
     return trades.filter(t => t.accountId === selectedAccountId && t.isDeleted);
   }, [trades, selectedAccountId]);
 
+  // Global stats passed to dashboard (but dashboard now calculates its own filtered stats)
+  // We can keep this basic calculation for fallback or remove it if unused.
   const stats = useMemo(() => {
+      // NOTE: Dashboard now does its own math based on date filters.
+      // This object calculates stats for ALL TIME for the account.
       const wins = currentAccountTrades.filter(t => t.pnl > 0);
       const losses = currentAccountTrades.filter(t => t.pnl < 0);
       const totalTrades = currentAccountTrades.length;
@@ -586,28 +591,6 @@ function App() {
   const handleSaveTrade = async (trade: Trade, shouldClose: boolean = true): Promise<boolean> => {
     try {
         await saveTrade(trade);
-        
-        // Auto-expand filter if new trade is outside current range
-        const tDate = new Date(trade.entryDate).toISOString().split('T')[0];
-        let newStart = startDate;
-        let newEnd = endDate;
-        let rangeChanged = false;
-
-        if (tDate < startDate) {
-            newStart = tDate;
-            rangeChanged = true;
-        }
-        if (tDate > endDate) {
-            newEnd = tDate;
-            rangeChanged = true;
-        }
-
-        if (rangeChanged) {
-            setStartDate(newStart);
-            setEndDate(newEnd);
-            saveSetting('pipsuite_date_range', { start: newStart, end: newEnd });
-        }
-
         // Refresh trades to get updated list
         const updated = await getTrades(); 
         setTrades(updated);
@@ -623,6 +606,12 @@ function App() {
         alert(`Failed to save trade: ${e.message || 'Unknown error'}`);
         return false;
     }
+  };
+
+  const handleDateRangeChange = (newStart: string, newEnd: string) => {
+      setStartDate(newStart);
+      setEndDate(newEnd);
+      saveSetting('pipsuite_date_range', { start: newStart, end: newEnd });
   };
 
   const handleSoftDeleteTrade = async (id: string) => {
@@ -694,17 +683,20 @@ function App() {
       selectedAccountId={selectedAccountId}
       setSelectedAccountId={handleAccountChange}
       onAddTradeClick={() => setShowAddTrade(true)} // Open unified modal
-      startDate={startDate}
-      setStartDate={setStartDate}
-      endDate={endDate}
-      setEndDate={setEndDate}
       toggleTheme={toggleTheme}
       isDarkMode={isDarkMode}
       onUpdateBalance={handleUpdateBalance}
     >
       {activeTab === 'dashboard' && (
           <div className="space-y-6">
-              <Dashboard stats={stats} trades={currentAccountTrades} tagGroups={tagGroups} />
+              <Dashboard 
+                stats={stats} 
+                trades={currentAccountTrades} 
+                tagGroups={tagGroups}
+                startDate={startDate}
+                endDate={endDate}
+                onDateChange={handleDateRangeChange}
+              />
               <AICoach trades={currentAccountTrades} />
           </div>
       )}

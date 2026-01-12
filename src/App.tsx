@@ -52,7 +52,8 @@ const AddTradeModal = ({
     type: TradeType.LONG,
     entryPrice: '',
     currentPrice: '', // For limit/stop calc
-    entryDate: new Date().toISOString().slice(0, 16), // YYYY-MM-DDTHH:mm
+    // Initialize with LOCAL time so date picker defaults to "Today" correctly
+    entryDate: new Date(new Date().getTime() - (new Date().getTimezoneOffset() * 60000)).toISOString().slice(0, 16),
     quantity: '',
     stopLoss: '',
     takeProfit: '',
@@ -274,7 +275,8 @@ const AddTradeModal = ({
                 type: TradeType.LONG,
                 entryPrice: '',
                 currentPrice: '',
-                entryDate: new Date().toISOString().slice(0, 16),
+                // Reset to current LOCAL time
+                entryDate: new Date(new Date().getTime() - (new Date().getTimezoneOffset() * 60000)).toISOString().slice(0, 16),
                 quantity: '',
                 stopLoss: '',
                 takeProfit: '',

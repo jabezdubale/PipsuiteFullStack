@@ -39,7 +39,7 @@ import {
 import { getSetting, saveSetting } from '../services/storageService';
 
 interface DashboardProps {
-  stats: TradeStats;
+  stats: TradeStats; // Global stats passed from parent (might differ if local filter applied)
   trades: Trade[];
   tagGroups: TagGroup[];
 }
@@ -57,6 +57,7 @@ const InfoTooltip = ({ title, content }: { title: string, content: React.ReactNo
 
   const handleMouseEnter = (e: React.MouseEvent) => {
     const rect = e.currentTarget.getBoundingClientRect();
+    // If element is too close to the top (e.g. < 220px), flip tooltip to bottom
     setIsBottom(rect.top < 220);
   };
 
@@ -70,6 +71,7 @@ const InfoTooltip = ({ title, content }: { title: string, content: React.ReactNo
       >
           <h4 className="font-bold text-primary mb-1 text-sm">{title}</h4>
           <div className="space-y-2 text-textMuted">{content}</div>
+          {/* Arrow */}
           <div 
             className={`absolute left-1/2 -translate-x-1/2 border-8 border-transparent ${
                 isBottom ? 'bottom-full border-b-border' : 'top-full border-t-border'
@@ -190,11 +192,16 @@ const WidgetContainer = ({ title, icon: Icon, children, className = '', tooltipT
 const Dashboard: React.FC<DashboardProps> = ({ stats: initialStats, trades, tagGroups }) => {
   // Global Filters
   const [activeTagFilter, setActiveTagFilter] = useState<string[]>([]);
-  const [activeAssetFilter, setActiveAssetFilter] = useState<string[]>([]);
-
-  // Widget Specific Filters
-  const [visibleSetups, setVisibleSetups] = useState<string[]>([]);
+  const [activeAssetFilter, setActiveAssetFilter] = useState<string[]>([]); // Global Asset Filter
   
+  // Local Date Filter
+  const [startDate, setStartDate] = useState('');
+  const [endDate, setEndDate] = useState('');
+
+  // Widget Specific Filters (Visualization Only)
+  const [visibleSetups, setVisibleSetups] = useState<string[]>([]);
+  const [visibleAssetPairs, setVisibleAssetPairs] = useState<string[]>([]);
+
   const [isConfigOpen, setIsConfigOpen] = useState(false);
   const [hourlyFormat12, setHourlyFormat12] = useState(true);
   
@@ -222,6 +229,7 @@ const Dashboard: React.FC<DashboardProps> = ({ stats: initialStats, trades, tagG
             assetMatrix: true, tags: true, heatmap: true, hourly: true, daily: true, expectancy: true, patience: true, holdTimeDistribution: true, holdTime: true,
         });
         
+        // Merge defaults in case new widgets were added since last save
         setWidgetOrder(prev => {
             const missing = prev.filter(key => !savedOrder.includes(key));
             return [...savedOrder, ...missing];
@@ -249,6 +257,18 @@ const Dashboard: React.FC<DashboardProps> = ({ stats: initialStats, trades, tagG
   const dashboardTrades = useMemo(() => {
       let filtered = trades;
 
+      // 0. Date Filter (Local) - CONDITIONAL: Only filter if BOTH are present
+      if (startDate && endDate) {
+          const start = new Date(startDate);
+          const end = new Date(endDate);
+          end.setHours(23, 59, 59, 999);
+          
+          filtered = filtered.filter(t => {
+              const d = new Date(t.entryDate || t.createdAt);
+              return d >= start && d <= end;
+          });
+      }
+
       // 1. Tag Filter (AND Logic - Intersection)
       if (activeTagFilter.length > 0) {
           filtered = filtered.filter(t => activeTagFilter.every(tag => t.tags.includes(tag)));
@@ -260,9 +280,9 @@ const Dashboard: React.FC<DashboardProps> = ({ stats: initialStats, trades, tagG
       }
 
       return filtered;
-  }, [trades, activeTagFilter, activeAssetFilter]);
+  }, [trades, activeTagFilter, activeAssetFilter, startDate, endDate]);
 
-  // --- STATS RECALCULATION (Based on dashboardTrades) ---
+  // --- LOCAL STATS RECALCULATION ---
   const dashboardStats = useMemo(() => {
       const totalTrades = dashboardTrades.length;
       if (totalTrades === 0) {
@@ -287,6 +307,7 @@ const Dashboard: React.FC<DashboardProps> = ({ stats: initialStats, trades, tagG
 
   // 1. STREAK
   const currentStreak = useMemo(() => {
+      // Filter strictly for CLOSED trades that are not MISSED or OPEN
       const validTrades = dashboardTrades.filter(t => 
           t.outcome === TradeOutcome.CLOSED && 
           (t.status === TradeStatus.WIN || t.status === TradeStatus.LOSS || t.status === TradeStatus.BREAK_EVEN)
@@ -311,17 +332,25 @@ const Dashboard: React.FC<DashboardProps> = ({ stats: initialStats, trades, tagG
 
   // 2. AVG RR RATIO (Planned)
   const avgRRRatio = useMemo(() => {
+      // Logic: Sum of all Planned RR values / Number of closed trades
+      // Formula: (TP - Entry) / (Entry - SL)
       const validTrades = dashboardTrades.filter(t => t.outcome === TradeOutcome.CLOSED);
       
       let totalRR = 0;
       let count = 0;
 
       validTrades.forEach(t => {
+          // We need Entry, SL, and TP to calculate the Planned RR
           if (!t.entryPrice || !t.stopLoss || !t.takeProfit) return;
+          
           const risk = Math.abs(t.entryPrice - t.stopLoss);
           const reward = Math.abs(t.takeProfit - t.entryPrice);
+          
+          // Safety: Prevent division by zero
           if (risk <= 0) return;
+
           const rr = reward / risk;
+          
           totalRR += rr;
           count++;
       });
@@ -412,10 +441,22 @@ const Dashboard: React.FC<DashboardProps> = ({ stats: initialStats, trades, tagG
   const patienceData = useMemo(() => {
       const sorted = [...dashboardTrades].sort((a,b) => new Date(a.entryDate).getTime() - new Date(b.entryDate).getTime());
       
+      // New Buckets Structure
       const buckets = {
-          '1-30m': 0, '30m-1h': 0, '1h-2h': 0, '2h-3h': 0, '3h-4h': 0, '4h-5h': 0, '5h-6h': 0, '6h-8h': 0, '8h-12h': 0, '12h-24h': 0, '> 24h': 0,
+          '1-30m': 0,
+          '30m-1h': 0,
+          '1h-2h': 0,
+          '2h-3h': 0,
+          '3h-4h': 0,
+          '4h-5h': 0,
+          '5h-6h': 0,
+          '6h-8h': 0,
+          '8h-12h': 0,
+          '12h-24h': 0,
+          '> 24h': 0,
       };
       
+      // Helper to maintain bucket totals
       const bucketPnl = { ...buckets }; 
 
       sorted.forEach((t, i) => {
@@ -450,15 +491,33 @@ const Dashboard: React.FC<DashboardProps> = ({ stats: initialStats, trades, tagG
       });
 
       return Object.entries(buckets)
-        .map(([range, count]) => ({ range, count, pnl: (bucketPnl as any)[range] }))
+        .map(([range, count]) => ({ 
+            range, 
+            count, 
+            // @ts-ignore
+            pnl: bucketPnl[range] 
+        }))
+        // Only show buckets that have data to avoid clutter
         .filter(d => d.count >= 0); 
   }, [dashboardTrades]);
 
   // 9. HOLD TIME (New Widget: Distribution)
+  // Calculates duration (Exit - Entry) and buckets it.
   const holdTimeDistributionData = useMemo(() => {
       const buckets = {
-          '1-30m': 0, '30m-1h': 0, '1h-2h': 0, '2h-3h': 0, '3h-4h': 0, '4h-5h': 0, '5h-6h': 0, '6h-8h': 0, '8h-12h': 0, '12h-24h': 0, '> 24h': 0,
+          '1-30m': 0,
+          '30m-1h': 0,
+          '1h-2h': 0,
+          '2h-3h': 0,
+          '3h-4h': 0,
+          '4h-5h': 0,
+          '5h-6h': 0,
+          '6h-8h': 0,
+          '8h-12h': 0,
+          '12h-24h': 0,
+          '> 24h': 0,
       };
+      
       const bucketPnl = { ...buckets };
 
       dashboardTrades.forEach(t => {
@@ -487,7 +546,12 @@ const Dashboard: React.FC<DashboardProps> = ({ stats: initialStats, trades, tagG
       });
 
       return Object.entries(buckets)
-        .map(([range, count]) => ({ range, count, pnl: (bucketPnl as any)[range] }))
+        .map(([range, count]) => ({ 
+            range, 
+            count, 
+            // @ts-ignore
+            pnl: bucketPnl[range] 
+        }))
         .filter(d => d.count >= 0);
   }, [dashboardTrades]);
 
@@ -504,14 +568,15 @@ const Dashboard: React.FC<DashboardProps> = ({ stats: initialStats, trades, tagG
                   pnl: t.pnl,
               };
           })
-          .filter(d => d.minutes > 0 && d.minutes < 1440);
+          .filter(d => d.minutes > 0 && d.minutes < 1440); // Filter > 24h
   }, [dashboardTrades]);
 
-  // 11. TAGS & ASSET MATRIX STATS (Calculated from filtered Dashboard trades)
+  // 11. TAGS & ASSET MATRIX STATS
   const calculateMatrixStats = (items: string[], getItems: (t: Trade) => string[]): Record<string, MatrixStats> => {
       const stats: Record<string, MatrixStats> = {};
       items.forEach(i => { stats[i] = { count: 0, wins: 0, pnl: 0 }; });
       
+      // Use filtered trades to reflect current view
       dashboardTrades.forEach(t => { 
           getItems(t).forEach(item => {
               if (!stats[item]) stats[item] = { count: 0, wins: 0, pnl: 0 };
@@ -524,13 +589,13 @@ const Dashboard: React.FC<DashboardProps> = ({ stats: initialStats, trades, tagG
       return stats;
   };
 
-  const tagStats = useMemo<Record<string, MatrixStats>>(() => {
+  const tagStats = useMemo(() => {
       const allTags = tagGroups.flatMap(g => g.tags);
       return calculateMatrixStats(allTags, (t) => t.tags);
   }, [dashboardTrades, tagGroups]);
 
-  const assetStats = useMemo<Record<string, MatrixStats>>(() => {
-      const allAssets = Array.from(new Set<string>(trades.map(t => t.symbol))); // Get assets from ALL trades, but stats from filtered
+  const assetStats = useMemo(() => {
+      const allAssets = Array.from(new Set<string>(dashboardTrades.map(t => t.symbol)));
       return calculateMatrixStats(allAssets, (t) => [t.symbol]);
   }, [dashboardTrades, trades]);
 
@@ -546,31 +611,48 @@ const Dashboard: React.FC<DashboardProps> = ({ stats: initialStats, trades, tagG
   // --- DRAG HANDLERS ---
   const handleDragStart = (e: React.DragEvent, key: string) => {
       e.dataTransfer.effectAllowed = 'move';
-      setTimeout(() => { setDraggedWidget(key); }, 0);
+      // We set draggedWidget state AFTER a small timeout.
+      // This allows the browser to capture the "full" element as the ghost image
+      // before we apply the "empty placeholder" style to the element on screen.
+      setTimeout(() => {
+          setDraggedWidget(key);
+      }, 0);
   };
 
-  const handleDragOver = (e: React.DragEvent) => { e.preventDefault(); e.dataTransfer.dropEffect = 'move'; };
+  const handleDragOver = (e: React.DragEvent) => {
+      e.preventDefault();
+      e.dataTransfer.dropEffect = 'move';
+  };
 
   const handleDragEnter = (e: React.DragEvent, targetKey: string) => {
       e.preventDefault();
       if (!draggedWidget || draggedWidget === targetKey) return;
+      
       const oldIndex = widgetOrder.indexOf(draggedWidget);
       const newIndex = widgetOrder.indexOf(targetKey);
+      
       if (oldIndex !== -1 && newIndex !== -1) {
           const newOrder = [...widgetOrder];
+          // Remove dragged item
           newOrder.splice(oldIndex, 1);
+          // Insert at new index (swap position)
           newOrder.splice(newIndex, 0, draggedWidget);
           setWidgetOrder(newOrder);
       }
   };
 
-  const handleDrop = (e: React.DragEvent, targetKey: string) => { e.preventDefault(); setDraggedWidget(null); };
+  const handleDrop = (e: React.DragEvent, targetKey: string) => {
+      e.preventDefault();
+      setDraggedWidget(null);
+  };
 
   // --- RENDERERS ---
+
   const renderHeatmap = () => {
       const weeksToShow = 52; 
       const now = new Date();
       const weeks = [];
+      
       const startDateCalc = new Date();
       startDateCalc.setDate(now.getDate() - ((weeksToShow - 1) * 7));
       startDateCalc.setDate(startDateCalc.getDate() - startDateCalc.getDay()); 
@@ -597,30 +679,52 @@ const Dashboard: React.FC<DashboardProps> = ({ stats: initialStats, trades, tagG
               }
 
               weekDays.push(
-                  <div key={d} className={`flex-1 w-full rounded-[2px] ${bg} hover:ring-1 ring-textMain/50 transition-all cursor-default min-h-0`} title={title} />
+                  <div 
+                    key={d} 
+                    className={`flex-1 w-full rounded-[2px] ${bg} hover:ring-1 ring-textMain/50 transition-all cursor-default min-h-0`} 
+                    title={title} 
+                  />
               );
               startDateCalc.setDate(startDateCalc.getDate() + 1);
           }
-          weeks.push(<div key={w} className="flex-1 flex flex-col gap-[2px] min-w-0 h-full">{weekDays}</div>);
+          weeks.push(
+            <div key={w} className="flex-1 flex flex-col gap-[2px] min-w-0 h-full">
+                {weekDays}
+            </div>
+          );
       }
 
       const splitIndex = Math.ceil(weeksToShow / 2);
+      const firstRow = weeks.slice(0, splitIndex);
+      const secondRow = weeks.slice(splitIndex);
+
       return (
         <div className="flex-1 flex flex-col gap-3 min-h-0 w-full">
-            <div className="flex-1 flex gap-[2px] w-full min-h-0">{weeks.slice(0, splitIndex)}</div>
-            <div className="flex-1 flex gap-[2px] w-full min-h-0">{weeks.slice(splitIndex)}</div>
+            <div className="flex-1 flex gap-[2px] w-full min-h-0">
+                {firstRow}
+            </div>
+            <div className="flex-1 flex gap-[2px] w-full min-h-0">
+                {secondRow}
+            </div>
         </div>
       );
   };
 
-  const isFiltered = activeTagFilter.length > 0 || activeAssetFilter.length > 0;
+  const isFiltered = activeTagFilter.length > 0 || activeAssetFilter.length > 0 || (startDate && endDate);
 
   const renderWidget = (key: string) => {
       switch(key) {
           case 'assetMatrix': return (
               <WidgetContainer 
-                title="Asset Impact Matrix" icon={DollarSign} tooltipTitle="Asset Filtering"
-                tooltipContent={<><p><strong>What:</strong> Performance statistics for every asset pair you have traded.</p><p><strong>Use:</strong> Click any asset to filter the dashboard. Selecting multiple assets shows data for ANY of them (OR logic).</p></>}
+                title="Asset Impact Matrix" 
+                icon={DollarSign}
+                tooltipTitle="Asset Filtering"
+                tooltipContent={
+                    <>
+                        <p><strong>What:</strong> Performance statistics for every asset pair you have traded.</p>
+                        <p><strong>Use:</strong> Click any asset to filter the dashboard. Selecting multiple assets shows data for ANY of them (OR logic).</p>
+                    </>
+                }
                 onDragHandleMouseDown={() => {}}
               >
                   <div className="overflow-auto h-full pr-1 scrollbar-thin">
@@ -637,52 +741,100 @@ const Dashboard: React.FC<DashboardProps> = ({ stats: initialStats, trades, tagG
                               {Object.entries(assetStats).sort((a: [string, MatrixStats], b: [string, MatrixStats]) => b[1].pnl - a[1].pnl).map(([asset, s]: [string, MatrixStats]) => {
                                   const winRate = s.count > 0 ? (s.wins / s.count) * 100 : 0;
                                   const isActive = activeAssetFilter.includes(asset);
-                                  if (s.count === 0 && !isActive) return null; // Hide if no trades in current view
+
                                   return (
-                                      <tr key={asset} onClick={() => toggleAssetFilter(asset)} style={{ boxShadow: isActive ? 'inset 3px 0 0 0 #6366f1' : 'none' }} className={`cursor-pointer transition-colors ${isActive ? 'bg-indigo-500/10' : 'hover:bg-surfaceHighlight border-l-2 border-transparent'}`}>
-                                          <td className="p-2 font-medium text-textMain flex items-center gap-2"><span className={`w-1.5 h-1.5 rounded-full ${s.pnl >= 0 ? 'bg-profit' : 'bg-loss'}`}></span>{asset}</td>
+                                      <tr 
+                                        key={asset} 
+                                        onClick={() => toggleAssetFilter(asset)}
+                                        style={{ boxShadow: isActive ? 'inset 3px 0 0 0 #6366f1' : 'none' }}
+                                        className={`cursor-pointer transition-colors ${
+                                            isActive 
+                                            ? 'bg-indigo-500/10' 
+                                            : 'hover:bg-surfaceHighlight border-l-2 border-transparent'
+                                        }`}
+                                      >
+                                          <td className="p-2 font-medium text-textMain flex items-center gap-2">
+                                              <span className={`w-1.5 h-1.5 rounded-full ${s.pnl >= 0 ? 'bg-profit' : 'bg-loss'}`}></span>
+                                              {asset}
+                                          </td>
                                           <td className="p-2 text-right font-mono">{s.count}</td>
                                           <td className="p-2 text-right font-mono">{winRate.toFixed(0)}%</td>
-                                          <td className={`p-2 text-right font-mono font-bold ${s.pnl >= 0 ? 'text-profit' : 'text-loss'}`}>${s.pnl.toFixed(0)}</td>
+                                          <td className={`p-2 text-right font-mono font-bold ${s.pnl >= 0 ? 'text-profit' : 'text-loss'}`}>
+                                              ${s.pnl.toFixed(0)}
+                                          </td>
                                       </tr>
                                   )
                               })}
                           </tbody>
                       </table>
-                      {Object.values(assetStats).every((s: MatrixStats) => s.count === 0) && <div className="p-6 text-center text-textMuted italic text-xs">No assets found in current view.</div>}
+                      {Object.keys(assetStats).length === 0 && (
+                          <div className="p-6 text-center text-textMuted italic text-xs">
+                              No assets found in current view.
+                          </div>
+                      )}
                   </div>
               </WidgetContainer>
           );
-          // ... (Rest of widgets remain mostly same structure, logic now uses dashboardTrades/dashboardStats)
           case 'tags': return (
               <WidgetContainer 
-                title="Tag Impact Matrix" icon={Filter} tooltipTitle="Detailed Factor Analysis"
-                tooltipContent={<><p><strong>What:</strong> A breakdown of your performance statistics for every tag used.</p><p><strong>Use:</strong> Click any tag to filter the <strong>entire dashboard</strong> (AND logic).</p></>}
+                title="Tag Impact Matrix" 
+                icon={Filter}
+                tooltipTitle="Detailed Factor Analysis"
+                tooltipContent={
+                    <>
+                        <p><strong>What:</strong> A breakdown of your performance statistics for every tag used.</p>
+                        <p><strong>Use:</strong> Click any tag to filter the <strong>entire dashboard</strong> (AND logic).</p>
+                    </>
+                }
                 onDragHandleMouseDown={() => {}}
               >
                   <div className="overflow-auto h-full pr-1 scrollbar-thin">
                       <table className="w-full text-xs text-left border-collapse">
                           <thead className="bg-surfaceHighlight text-textMuted uppercase tracking-wider sticky top-0 z-10">
-                              <tr><th className="p-2 bg-surfaceHighlight">Tag Name</th><th className="p-2 text-right bg-surfaceHighlight">Count</th><th className="p-2 text-right bg-surfaceHighlight">Win%</th><th className="p-2 text-right bg-surfaceHighlight">Total $</th></tr>
+                              <tr>
+                                  <th className="p-2 bg-surfaceHighlight">Tag Name</th>
+                                  <th className="p-2 text-right bg-surfaceHighlight">Count</th>
+                                  <th className="p-2 text-right bg-surfaceHighlight">Win%</th>
+                                  <th className="p-2 text-right bg-surfaceHighlight">Total $</th>
+                              </tr>
                           </thead>
                           <tbody className="divide-y divide-border/50">
                               {tagGroups.map(group => {
                                   const activeTags = group.tags.filter(t => tagStats[t]?.count > 0);
                                   if (activeTags.length === 0) return null;
+
                                   return (
                                       <React.Fragment key={group.name}>
-                                          <tr className="bg-surfaceHighlight/30"><td colSpan={4} className="py-1 px-2 text-[9px] font-bold text-textMuted uppercase tracking-widest">{group.name}</td></tr>
+                                          <tr className="bg-surfaceHighlight/30">
+                                              <td colSpan={4} className="py-1 px-2 text-[9px] font-bold text-textMuted uppercase tracking-widest">
+                                                  {group.name}
+                                              </td>
+                                          </tr>
                                           {activeTags.map(tag => {
                                               const s = tagStats[tag];
-                                              if (!s) return null;
                                               const winRate = (s.wins / s.count) * 100;
                                               const isActive = activeTagFilter.includes(tag);
+
                                               return (
-                                                  <tr key={tag} onClick={() => toggleTagFilter(tag)} style={{ boxShadow: isActive ? 'inset 3px 0 0 0 #3b82f6' : 'none' }} className={`cursor-pointer transition-colors ${isActive ? 'bg-primary/10' : 'hover:bg-surfaceHighlight'}`}>
-                                                      <td className="p-2 font-medium text-textMain flex items-center gap-2"><span className={`w-1.5 h-1.5 rounded-full ${s.pnl >= 0 ? 'bg-profit' : 'bg-loss'}`}></span>{tag}</td>
+                                                  <tr 
+                                                    key={tag} 
+                                                    onClick={() => toggleTagFilter(tag)}
+                                                    style={{ boxShadow: isActive ? 'inset 3px 0 0 0 #3b82f6' : 'none' }}
+                                                    className={`cursor-pointer transition-colors ${
+                                                        isActive 
+                                                        ? 'bg-primary/10' 
+                                                        : 'hover:bg-surfaceHighlight'
+                                                    }`}
+                                                  >
+                                                      <td className="p-2 font-medium text-textMain flex items-center gap-2">
+                                                          <span className={`w-1.5 h-1.5 rounded-full ${s.pnl >= 0 ? 'bg-profit' : 'bg-loss'}`}></span>
+                                                          {tag}
+                                                      </td>
                                                       <td className="p-2 text-right font-mono">{s.count}</td>
                                                       <td className="p-2 text-right font-mono">{winRate.toFixed(0)}%</td>
-                                                      <td className={`p-2 text-right font-mono font-bold ${s.pnl >= 0 ? 'text-profit' : 'text-loss'}`}>${s.pnl.toFixed(0)}</td>
+                                                      <td className={`p-2 text-right font-mono font-bold ${s.pnl >= 0 ? 'text-profit' : 'text-loss'}`}>
+                                                          ${s.pnl.toFixed(0)}
+                                                      </td>
                                                   </tr>
                                               )
                                           })}
@@ -691,17 +843,223 @@ const Dashboard: React.FC<DashboardProps> = ({ stats: initialStats, trades, tagG
                               })}
                           </tbody>
                       </table>
-                      {Object.keys(tagStats).filter(t => tagStats[t]?.count > 0).length === 0 && <div className="p-6 text-center text-textMuted italic text-xs">No tagged trades found.</div>}
+                      {Object.keys(tagStats).filter(t => tagStats[t].count > 0).length === 0 && (
+                          <div className="p-6 text-center text-textMuted italic text-xs">
+                              No tagged trades found. Tag your trades to see data here.
+                          </div>
+                      )}
                   </div>
               </WidgetContainer>
           );
-          case 'heatmap': return <WidgetContainer title="Calendar Heatmap" icon={CalendarIcon} tooltipTitle="Consistency Visualizer" tooltipContent={<><p>Green indicates profit, red indicates loss.</p></>} onDragHandleMouseDown={() => {}}><div className="flex flex-col h-full w-full pb-2">{renderHeatmap()}<div className="flex justify-center items-center gap-4 mt-3 text-[9px] text-textMuted uppercase font-semibold shrink-0"><div className="flex items-center gap-1"><div className="w-2 h-2 bg-loss rounded-[1px]"></div> Loss</div><div className="flex items-center gap-1"><div className="w-2 h-2 bg-surfaceHighlight rounded-[1px]"></div> No Trade</div><div className="flex items-center gap-1"><div className="w-2 h-2 bg-profit rounded-[1px]"></div> Profit</div></div></div></WidgetContainer>;
-          case 'hourly': return <WidgetContainer title="Hourly Performance" icon={Clock} tooltipTitle="Time of Day Analysis" tooltipContent={<p>Net PnL broken down by the hour of the day.</p>} controls={<div className="flex items-center gap-2"><span className="text-[9px] text-textMuted uppercase hidden sm:inline">{userTimezone}</span><button onClick={() => setHourlyFormat12(!hourlyFormat12)} className="text-[10px] border border-border px-1.5 py-0.5 rounded hover:bg-surfaceHighlight">{hourlyFormat12 ? '12H' : '24H'}</button></div>} onDragHandleMouseDown={() => {}}><ResponsiveContainer width="100%" height="100%"><BarChart data={hourlyData}><CartesianGrid strokeDasharray="3 3" vertical={false} stroke="rgb(var(--color-border))" /><XAxis dataKey="hour" fontSize={10} stroke="rgb(var(--color-text-muted))" tickLine={false} axisLine={false} /><Tooltip cursor={{fill: 'transparent'}} contentStyle={{ backgroundColor: 'rgb(var(--color-surface))', borderColor: 'rgb(var(--color-border))', color: 'rgb(var(--color-text-main))' }} /><ReferenceLine y={0} stroke="rgb(var(--color-border))" /><Bar dataKey="pnl">{hourlyData.map((entry, index) => (<Cell key={`cell-${index}`} fill={entry.pnl >= 0 ? '#10b981' : '#ef4444'} />))}</Bar></BarChart></ResponsiveContainer></WidgetContainer>;
-          case 'daily': return <WidgetContainer title="Day of Week" icon={CalendarIcon} tooltipTitle="Weekly Cycle Analysis" tooltipContent={<p>Cumulative PnL grouped by day of the week.</p>} onDragHandleMouseDown={() => {}}><ResponsiveContainer width="100%" height="100%"><BarChart data={dailyData}><CartesianGrid strokeDasharray="3 3" vertical={false} stroke="rgb(var(--color-border))" /><XAxis dataKey="day" fontSize={10} stroke="rgb(var(--color-text-muted))" tickLine={false} axisLine={false} /><Tooltip cursor={{fill: 'transparent'}} contentStyle={{ backgroundColor: 'rgb(var(--color-surface))', borderColor: 'rgb(var(--color-border))', color: 'rgb(var(--color-text-main))' }} /><ReferenceLine y={0} stroke="rgb(var(--color-border))" /><Bar dataKey="pnl">{dailyData.map((entry, index) => (<Cell key={`cell-${index}`} fill={entry.pnl >= 0 ? '#10b981' : '#ef4444'} />))}</Bar></BarChart></ResponsiveContainer></WidgetContainer>;
-          case 'expectancy': return <WidgetContainer title="Expectancy by Setup" icon={Target} tooltipTitle="Strategy Edge Validator" tooltipContent={<p>Mathematical "edge" of each setup.</p>} controls={<MultiSelectDropdown label="Setups" options={allSetups} selected={visibleSetups} onChange={setVisibleSetups} />} onDragHandleMouseDown={() => {}}><ResponsiveContainer width="100%" height="100%"><BarChart data={expectancyData} layout="vertical" margin={{ left: 30 }}><CartesianGrid strokeDasharray="3 3" horizontal={true} vertical={false} stroke="rgb(var(--color-border))" /><XAxis type="number" fontSize={10} stroke="rgb(var(--color-text-muted))" tickLine={false} axisLine={false} /><YAxis type="category" dataKey="setup" fontSize={10} stroke="rgb(var(--color-text-muted))" tickLine={false} axisLine={false} width={80} /><Tooltip cursor={{fill: 'transparent'}} contentStyle={{ backgroundColor: 'rgb(var(--color-surface))', borderColor: 'rgb(var(--color-border))', color: 'rgb(var(--color-text-main))' }} /><ReferenceLine x={0} stroke="rgb(var(--color-border))" /><Bar dataKey="expectancy" barSize={15}>{expectancyData.map((entry, index) => (<Cell key={`cell-${index}`} fill={entry.expectancy >= 0 ? '#10b981' : '#ef4444'} />))}</Bar></BarChart></ResponsiveContainer></WidgetContainer>;
-          case 'patience': return <WidgetContainer title="Patience Meter" icon={Hourglass} tooltipTitle="Revenge Trading Detector" tooltipContent={<p>Time elapsed since previous trade close.</p>} onDragHandleMouseDown={() => {}}><ResponsiveContainer width="100%" height="100%"><BarChart data={patienceData}><CartesianGrid strokeDasharray="3 3" vertical={false} stroke="rgb(var(--color-border))" /><XAxis dataKey="range" fontSize={10} stroke="rgb(var(--color-text-muted))" tickLine={false} axisLine={false} /><Tooltip cursor={{fill: 'transparent'}} contentStyle={{ backgroundColor: 'rgb(var(--color-surface))', borderColor: 'rgb(var(--color-border))', color: 'rgb(var(--color-text-main))' }} /><ReferenceLine y={0} stroke="rgb(var(--color-border))" /><Bar dataKey="pnl">{patienceData.map((entry, index) => (<Cell key={`cell-${index}`} fill={entry.pnl >= 0 ? '#10b981' : '#ef4444'} />))}</Bar></BarChart></ResponsiveContainer></WidgetContainer>;
-          case 'holdTimeDistribution': return <WidgetContainer title="Hold Time Distribution" icon={Timer} tooltipTitle="Duration vs Profit" tooltipContent={<p>Buckets your trades by hold duration.</p>} onDragHandleMouseDown={() => {}}><ResponsiveContainer width="100%" height="100%"><BarChart data={holdTimeDistributionData}><CartesianGrid strokeDasharray="3 3" vertical={false} stroke="rgb(var(--color-border))" /><XAxis dataKey="range" fontSize={10} stroke="rgb(var(--color-text-muted))" tickLine={false} axisLine={false} /><Tooltip cursor={{fill: 'transparent'}} contentStyle={{ backgroundColor: 'rgb(var(--color-surface))', borderColor: 'rgb(var(--color-border))', color: 'rgb(var(--color-text-main))' }} /><ReferenceLine y={0} stroke="rgb(var(--color-border))" /><Bar dataKey="pnl">{holdTimeDistributionData.map((entry, index) => (<Cell key={`cell-${index}`} fill={entry.pnl >= 0 ? '#10b981' : '#ef4444'} />))}</Bar></BarChart></ResponsiveContainer></WidgetContainer>;
-          case 'holdTime': return <WidgetContainer title="Hold Time vs PnL (Scatter)" icon={Activity} tooltipTitle="Trade Management Analysis" tooltipContent={<p>X-axis is time held (minutes), Y-axis is PnL.</p>} onDragHandleMouseDown={() => {}}><ResponsiveContainer width="100%" height="100%"><ScatterChart margin={{ top: 20, right: 20, bottom: 20, left: 20 }}><CartesianGrid strokeDasharray="3 3" stroke="rgb(var(--color-border))" /><XAxis type="number" dataKey="minutes" name="Minutes" unit="m" fontSize={10} stroke="rgb(var(--color-text-muted))" tickLine={false} axisLine={false} /><YAxis type="number" dataKey="pnl" name="P&L" unit="$" fontSize={10} stroke="rgb(var(--color-text-muted))" tickLine={false} axisLine={false} /><Tooltip cursor={{ strokeDasharray: '3 3' }} contentStyle={{ backgroundColor: 'rgb(var(--color-surface))', borderColor: 'rgb(var(--color-border))', color: 'rgb(var(--color-text-main))' }} /><ReferenceLine y={0} stroke="rgb(var(--color-border))" /><Scatter name="Trades" data={holdTimeData} fill="#8884d8">{holdTimeData.map((entry, index) => (<Cell key={`cell-${index}`} fill={entry.pnl >= 0 ? '#10b981' : '#ef4444'} />))}</Scatter></ScatterChart></ResponsiveContainer></WidgetContainer>;
+          // ... other widgets remain identical ...
+          case 'heatmap': return (
+            <WidgetContainer 
+                title="Calendar Heatmap" 
+                icon={CalendarIcon} 
+                tooltipTitle="Consistency Visualizer"
+                tooltipContent={
+                    <>
+                        <p><strong>What:</strong> A calendar view (last 12 months) where each square represents a trading day. Green indicates profit, red indicates loss.</p>
+                        <p><strong>Goal:</strong> Build a "chain" of green days. Intensity of color shows the size of the PnL.</p>
+                    </>
+                }
+                onDragHandleMouseDown={() => {}}
+            >
+                <div className="flex flex-col h-full w-full pb-2">
+                    {renderHeatmap()}
+                    <div className="flex justify-center items-center gap-4 mt-3 text-[9px] text-textMuted uppercase font-semibold shrink-0">
+                        <div className="flex items-center gap-1"><div className="w-2 h-2 bg-loss rounded-[1px]"></div> Loss</div>
+                        <div className="flex items-center gap-1"><div className="w-2 h-2 bg-surfaceHighlight rounded-[1px]"></div> No Trade</div>
+                        <div className="flex items-center gap-1"><div className="w-2 h-2 bg-profit rounded-[1px]"></div> Profit</div>
+                    </div>
+                </div>
+            </WidgetContainer>
+          );
+          case 'hourly': return (
+            <WidgetContainer 
+                title="Hourly Performance" 
+                icon={Clock}
+                tooltipTitle="Time of Day Analysis"
+                tooltipContent={
+                    <>
+                        <p><strong>What:</strong> Shows your Net PnL broken down by the hour of the day the trade was opened.</p>
+                    </>
+                }
+                controls={
+                    <div className="flex items-center gap-2">
+                        <span className="text-[9px] text-textMuted uppercase hidden sm:inline">{userTimezone}</span>
+                        <button 
+                            onClick={() => setHourlyFormat12(!hourlyFormat12)}
+                            className="text-[10px] border border-border px-1.5 py-0.5 rounded hover:bg-surfaceHighlight"
+                        >
+                            {hourlyFormat12 ? '12H' : '24H'}
+                        </button>
+                    </div>
+                }
+                onDragHandleMouseDown={() => {}}
+            >
+                <ResponsiveContainer width="100%" height="100%">
+                    <BarChart data={hourlyData}>
+                        <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="rgb(var(--color-border))" />
+                        <XAxis dataKey="hour" fontSize={10} stroke="rgb(var(--color-text-muted))" tickLine={false} axisLine={false} />
+                        <Tooltip cursor={{fill: 'transparent'}} contentStyle={{ backgroundColor: 'rgb(var(--color-surface))', borderColor: 'rgb(var(--color-border))', color: 'rgb(var(--color-text-main))' }} />
+                        <ReferenceLine y={0} stroke="rgb(var(--color-border))" />
+                        <Bar dataKey="pnl">
+                            {hourlyData.map((entry, index) => (
+                                <Cell key={`cell-${index}`} fill={entry.pnl >= 0 ? '#10b981' : '#ef4444'} />
+                            ))}
+                        </Bar>
+                    </BarChart>
+                </ResponsiveContainer>
+            </WidgetContainer>
+          );
+          case 'daily': return (
+            <WidgetContainer 
+                title="Day of Week" 
+                icon={CalendarIcon}
+                tooltipTitle="Weekly Cycle Analysis"
+                tooltipContent={
+                    <>
+                        <p><strong>What:</strong> Cumulative PnL grouped by day of the week (Mon-Fri).</p>
+                    </>
+                }
+                onDragHandleMouseDown={() => {}}
+            >
+                <ResponsiveContainer width="100%" height="100%">
+                    <BarChart data={dailyData}>
+                        <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="rgb(var(--color-border))" />
+                        <XAxis dataKey="day" fontSize={10} stroke="rgb(var(--color-text-muted))" tickLine={false} axisLine={false} />
+                        <Tooltip cursor={{fill: 'transparent'}} contentStyle={{ backgroundColor: 'rgb(var(--color-surface))', borderColor: 'rgb(var(--color-border))', color: 'rgb(var(--color-text-main))' }} />
+                        <ReferenceLine y={0} stroke="rgb(var(--color-border))" />
+                        <Bar dataKey="pnl">
+                            {dailyData.map((entry, index) => (
+                                <Cell key={`cell-${index}`} fill={entry.pnl >= 0 ? '#10b981' : '#ef4444'} />
+                            ))}
+                        </Bar>
+                    </BarChart>
+                </ResponsiveContainer>
+            </WidgetContainer>
+          );
+          case 'expectancy': return (
+              <WidgetContainer 
+                title="Expectancy by Setup" 
+                icon={Target}
+                tooltipTitle="Strategy Edge Validator"
+                tooltipContent={
+                    <>
+                        <p><strong>What:</strong> Calculates the mathematical "edge" of each setup per trade.</p>
+                    </>
+                }
+                controls={
+                    <MultiSelectDropdown 
+                        label="Setups" 
+                        options={allSetups} 
+                        selected={visibleSetups} 
+                        onChange={setVisibleSetups} 
+                    />
+                }
+                onDragHandleMouseDown={() => {}}
+              >
+                  <ResponsiveContainer width="100%" height="100%">
+                      <BarChart data={expectancyData} layout="vertical" margin={{ left: 30 }}>
+                          <CartesianGrid strokeDasharray="3 3" horizontal={true} vertical={false} stroke="rgb(var(--color-border))" />
+                          <XAxis type="number" fontSize={10} stroke="rgb(var(--color-text-muted))" tickLine={false} axisLine={false} />
+                          <YAxis type="category" dataKey="setup" fontSize={10} stroke="rgb(var(--color-text-muted))" tickLine={false} axisLine={false} width={80} />
+                          <Tooltip cursor={{fill: 'transparent'}} contentStyle={{ backgroundColor: 'rgb(var(--color-surface))', borderColor: 'rgb(var(--color-border))', color: 'rgb(var(--color-text-main))' }} />
+                          <ReferenceLine x={0} stroke="rgb(var(--color-border))" />
+                          <Bar dataKey="expectancy" barSize={15}>
+                              {expectancyData.map((entry, index) => (
+                                  <Cell key={`cell-${index}`} fill={entry.expectancy >= 0 ? '#10b981' : '#ef4444'} />
+                              ))}
+                          </Bar>
+                      </BarChart>
+                  </ResponsiveContainer>
+              </WidgetContainer>
+          );
+          case 'patience': return (
+              <WidgetContainer 
+                title="Patience Meter" 
+                icon={Hourglass}
+                tooltipTitle="Revenge Trading Detector"
+                tooltipContent={
+                    <>
+                        <p><strong>What:</strong> Groups your trades by how much time elapsed since the *previous* trade was closed.</p>
+                        <p><strong>Ranges:</strong> 1-30m, 30m-1h, ... 12h-24h, &gt; 24h.</p>
+                    </>
+                }
+                onDragHandleMouseDown={() => {}}
+              >
+                  <ResponsiveContainer width="100%" height="100%">
+                      <BarChart data={patienceData}>
+                          <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="rgb(var(--color-border))" />
+                          <XAxis dataKey="range" fontSize={10} stroke="rgb(var(--color-text-muted))" tickLine={false} axisLine={false} />
+                          <Tooltip cursor={{fill: 'transparent'}} contentStyle={{ backgroundColor: 'rgb(var(--color-surface))', borderColor: 'rgb(var(--color-border))', color: 'rgb(var(--color-text-main))' }} />
+                          <ReferenceLine y={0} stroke="rgb(var(--color-border))" />
+                          <Bar dataKey="pnl">
+                              {patienceData.map((entry, index) => (
+                                  <Cell key={`cell-${index}`} fill={entry.pnl >= 0 ? '#10b981' : '#ef4444'} />
+                              ))}
+                          </Bar>
+                      </BarChart>
+                  </ResponsiveContainer>
+              </WidgetContainer>
+          );
+          case 'holdTimeDistribution': return (
+              <WidgetContainer 
+                title="Hold Time Distribution" 
+                icon={Timer}
+                tooltipTitle="Duration vs Profit"
+                tooltipContent={
+                    <>
+                        <p><strong>What:</strong> Buckets your trades by how long they were held (Open to Close).</p>
+                        <p><strong>Use:</strong> Identify which duration yields the best results (e.g. Scalps vs Swings).</p>
+                    </>
+                }
+                onDragHandleMouseDown={() => {}}
+              >
+                  <ResponsiveContainer width="100%" height="100%">
+                      <BarChart data={holdTimeDistributionData}>
+                          <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="rgb(var(--color-border))" />
+                          <XAxis dataKey="range" fontSize={10} stroke="rgb(var(--color-text-muted))" tickLine={false} axisLine={false} />
+                          <Tooltip cursor={{fill: 'transparent'}} contentStyle={{ backgroundColor: 'rgb(var(--color-surface))', borderColor: 'rgb(var(--color-border))', color: 'rgb(var(--color-text-main))' }} />
+                          <ReferenceLine y={0} stroke="rgb(var(--color-border))" />
+                          <Bar dataKey="pnl">
+                              {holdTimeDistributionData.map((entry, index) => (
+                                  <Cell key={`cell-${index}`} fill={entry.pnl >= 0 ? '#10b981' : '#ef4444'} />
+                              ))}
+                          </Bar>
+                      </BarChart>
+                  </ResponsiveContainer>
+              </WidgetContainer>
+          );
+          case 'holdTime': return (
+              <WidgetContainer 
+                title="Hold Time vs PnL (Scatter)" 
+                icon={Activity}
+                tooltipTitle="Trade Management Analysis"
+                tooltipContent={
+                    <>
+                        <p><strong>What:</strong> A scatter plot. Each dot is a trade. X-axis is time held (minutes), Y-axis is PnL.</p>
+                    </>
+                }
+                onDragHandleMouseDown={() => {}}
+              >
+                  <ResponsiveContainer width="100%" height="100%">
+                      <ScatterChart margin={{ top: 20, right: 20, bottom: 20, left: 20 }}>
+                          <CartesianGrid strokeDasharray="3 3" stroke="rgb(var(--color-border))" />
+                          <XAxis type="number" dataKey="minutes" name="Minutes" unit="m" fontSize={10} stroke="rgb(var(--color-text-muted))" tickLine={false} axisLine={false} />
+                          <YAxis type="number" dataKey="pnl" name="P&L" unit="$" fontSize={10} stroke="rgb(var(--color-text-muted))" tickLine={false} axisLine={false} />
+                          <Tooltip cursor={{ strokeDasharray: '3 3' }} contentStyle={{ backgroundColor: 'rgb(var(--color-surface))', borderColor: 'rgb(var(--color-border))', color: 'rgb(var(--color-text-main))' }} />
+                          <ReferenceLine y={0} stroke="rgb(var(--color-border))" />
+                          <Scatter name="Trades" data={holdTimeData} fill="#8884d8">
+                              {holdTimeData.map((entry, index) => (
+                                  <Cell key={`cell-${index}`} fill={entry.pnl >= 0 ? '#10b981' : '#ef4444'} />
+                              ))}
+                          </Scatter>
+                      </ScatterChart>
+                  </ResponsiveContainer>
+              </WidgetContainer>
+          );
           default: return null;
       }
   };
@@ -725,9 +1083,15 @@ const Dashboard: React.FC<DashboardProps> = ({ stats: initialStats, trades, tagG
         <div>
           <h2 className="text-2xl font-bold text-textMain">Trading Performance</h2>
           <div className="text-textMuted text-xs mt-1 flex flex-wrap gap-2 items-center">
-             {(activeTagFilter.length > 0 || activeAssetFilter.length > 0) ? (
+             {(activeTagFilter.length > 0 || activeAssetFilter.length > 0 || (startDate && endDate)) ? (
                  <>
                     Filters:
+                    {startDate && endDate && (
+                        <span className="px-1.5 py-0.5 bg-surfaceHighlight text-textMain border border-border rounded font-medium flex items-center gap-1">
+                            {new Date(startDate).toLocaleDateString()} - {new Date(endDate).toLocaleDateString()}
+                            <X size={10} className="cursor-pointer" onClick={() => { setStartDate(''); setEndDate(''); }} />
+                        </span>
+                    )}
                     {activeTagFilter.map(tag => (
                         <span key={tag} className="px-1.5 py-0.5 bg-primary/10 text-primary border border-primary/20 rounded font-medium flex items-center gap-1">
                             {tag} <X size={10} className="cursor-pointer" onClick={() => toggleTagFilter(tag)} />
@@ -743,12 +1107,31 @@ const Dashboard: React.FC<DashboardProps> = ({ stats: initialStats, trades, tagG
           </div>
         </div>
         <div className="flex gap-2 items-center flex-wrap">
-            {(activeTagFilter.length > 0 || activeAssetFilter.length > 0) && (
+            {/* Local Date Filter Inputs */}
+            <div className="flex items-center gap-2 bg-surfaceHighlight border border-border p-1 rounded-lg">
+                <input 
+                    type="date" 
+                    value={startDate}
+                    onChange={(e) => setStartDate(e.target.value)}
+                    className="bg-transparent border-none text-xs text-textMain focus:ring-0 cursor-pointer font-medium p-0.5 w-24"
+                    title="Start Date"
+                />
+                <span className="text-textMuted text-xs">-</span>
+                <input 
+                    type="date" 
+                    value={endDate}
+                    onChange={(e) => setEndDate(e.target.value)}
+                    className="bg-transparent border-none text-xs text-textMain focus:ring-0 cursor-pointer font-medium p-0.5 w-24"
+                    title="End Date"
+                />
+            </div>
+
+            {(activeTagFilter.length > 0 || activeAssetFilter.length > 0 || (startDate && endDate)) && (
                 <button 
-                   onClick={() => { setActiveTagFilter([]); setActiveAssetFilter([]); }}
+                   onClick={() => { setActiveTagFilter([]); setActiveAssetFilter([]); setStartDate(''); setEndDate(''); }}
                    className="flex items-center gap-2 px-3 py-1.5 bg-loss/10 text-loss rounded-lg text-xs font-bold border border-loss/20 hover:bg-loss/20"
                 >
-                    <X size={12} /> Clear Filters
+                    <X size={12} /> Clear
                 </button>
             )}
             <button 

@@ -1,4 +1,3 @@
-
 require('dotenv').config();
 const express = require('express');
 const cors = require('cors');
@@ -11,6 +10,7 @@ app.use(cors());
 app.use(express.json({ limit: '50mb' }));
 
 // PostgreSQL Connection
+// Note: We create the pool but don't connect immediately to allow server startup even if DB config is missing initially
 let pool;
 
 const getDB = () => {
@@ -56,22 +56,18 @@ const parseTradeRow = (row) => {
     return t;
 };
 
-// Helper to safely get value or null. Explicitly handles undefined AND null.
-const v = (val) => (val === undefined || val === null || Number.isNaN(val) ? null : val);
-
 // Helper to convert camelCase trade object to snake_case for DB insert
-// FIX: Using v() wrapper for all optional fields to prevent 'undefined' passing to Postgres
 const mapTradeToParams = (t) => [
-    v(t.id), v(t.accountId), v(t.symbol), v(t.type), v(t.status), v(t.outcome),
-    v(t.entryPrice), v(t.exitPrice), v(t.stopLoss), v(t.takeProfit), v(t.quantity),
-    v(t.fees), v(t.mainPnl), v(t.pnl), v(t.balance),
-    v(t.createdAt), v(t.entryDate), v(t.exitDate), v(t.entryTime), v(t.exitTime),
-    v(t.entrySession), v(t.exitSession), v(t.orderType), v(t.setup),
-    v(t.leverage), v(t.riskPercentage), v(t.notes), v(t.emotionalNotes),
+    t.id, t.accountId, t.symbol, t.type, t.status, t.outcome,
+    t.entryPrice, t.exitPrice, t.stopLoss, t.takeProfit, t.quantity,
+    t.fees, t.mainPnl, t.pnl, t.balance,
+    t.createdAt, t.entryDate, t.exitDate, t.entryTime, t.exitTime,
+    t.entrySession, t.exitSession, t.orderType, t.setup,
+    t.leverage, t.riskPercentage, t.notes, t.emotionalNotes,
     JSON.stringify(t.tags || []),
     JSON.stringify(t.screenshots || []),
     JSON.stringify(t.partials || []),
-    t.isDeleted || false, v(t.deletedAt), t.isBalanceUpdated || false
+    t.isDeleted || false, t.deletedAt, t.isBalanceUpdated || false
 ];
 
 // --- Middleware to check DB connection ---
@@ -86,11 +82,12 @@ app.use(async (req, res, next) => {
 
 // --- API Routes ---
 
-// INITIALIZE DB
+// INITIALIZE DB (Run this once to create tables)
 app.get('/api/init', async (req, res) => {
     try {
         await req.db.query(`
             CREATE TABLE IF NOT EXISTS app_settings (key VARCHAR(255) PRIMARY KEY, value JSONB);
+            
             CREATE TABLE IF NOT EXISTS accounts (
                 id VARCHAR(255) PRIMARY KEY,
                 name VARCHAR(255) NOT NULL,
@@ -99,12 +96,14 @@ app.get('/api/init', async (req, res) => {
                 is_demo BOOLEAN DEFAULT false,
                 type VARCHAR(50) DEFAULT 'Real'
             );
+            
             CREATE TABLE IF NOT EXISTS monthly_notes (
                 month_key VARCHAR(20) PRIMARY KEY,
                 goals TEXT,
                 notes TEXT,
                 review TEXT
             );
+            
             CREATE TABLE IF NOT EXISTS trades (
                 id VARCHAR(255) PRIMARY KEY,
                 account_id VARCHAR(255) REFERENCES accounts(id) ON DELETE CASCADE,
@@ -142,20 +141,21 @@ app.get('/api/init', async (req, res) => {
                 is_balance_updated BOOLEAN DEFAULT false
             );
         `);
-        res.status(200).send("Database tables initialized successfully!");
+        res.status(200).send("Database tables initialized successfully! You can now use the app.");
     } catch (err) {
         console.error(err);
         res.status(500).json({ error: "Failed to initialize database: " + err.message });
     }
 });
 
-// GENERIC SETTINGS
+// GENERIC SETTINGS (Theme, Columns, User Profile, etc.)
 app.get('/api/settings/:key', async (req, res) => {
     const { key } = req.params;
     try {
         const result = await req.db.query("SELECT value FROM app_settings WHERE key = $1", [key]);
         res.json(result.rows.length > 0 ? result.rows[0].value : null);
     } catch (err) {
+        // If table doesn't exist, return null gracefully (first run)
         if (err.code === '42P01') return res.json(null);
         res.status(500).json({ error: err.message });
     }
@@ -187,6 +187,7 @@ app.get('/api/accounts', async (req, res) => {
             type: row.type
         })));
     } catch (err) {
+        // Handle "relation does not exist" (First run)
         if (err.code === '42P01') return res.json([]);
         console.error(err);
         res.status(500).json({ error: err.message });
@@ -272,12 +273,11 @@ app.post('/api/trades', async (req, res) => {
                 tags = EXCLUDED.tags, screenshots = EXCLUDED.screenshots, partials = EXCLUDED.partials,
                 is_deleted = EXCLUDED.is_deleted, deleted_at = EXCLUDED.deleted_at, is_balance_updated = EXCLUDED.is_balance_updated
         `;
-        const params = mapTradeToParams(t);
-        await req.db.query(queryText, params);
+        await req.db.query(queryText, mapTradeToParams(t));
         const result = await req.db.query('SELECT * FROM trades ORDER BY entry_date DESC');
         res.json(result.rows.map(parseTradeRow));
     } catch (err) {
-        console.error("Error saving trade:", err);
+        console.error(err);
         res.status(500).json({ error: err.message });
     }
 });
@@ -292,6 +292,7 @@ app.post('/api/trades/batch', async (req, res) => {
     const client = await req.db.connect();
     try {
         await client.query('BEGIN');
+        
         const queryText = `
             INSERT INTO trades (
                 id, account_id, symbol, type, status, outcome,
@@ -325,11 +326,12 @@ app.post('/api/trades/batch', async (req, res) => {
         }
 
         await client.query('COMMIT');
+        
         const result = await client.query('SELECT * FROM trades ORDER BY entry_date DESC');
         res.json(result.rows.map(parseTradeRow));
     } catch (err) {
         await client.query('ROLLBACK');
-        console.error("Batch import error:", err);
+        console.error(err);
         res.status(500).json({ error: "Batch import failed: " + err.message });
     } finally {
         client.release();
@@ -447,10 +449,12 @@ app.post('/api/monthly-notes', async (req, res) => {
     }
 });
 
+// Start Server locally (Only if not running on Vercel)
 if (process.env.NODE_ENV !== 'production') {
     app.listen(PORT, '0.0.0.0', () => {
         console.log(`Backend Server running on port ${PORT}`);
     });
 }
 
+// Export for Vercel
 module.exports = app;

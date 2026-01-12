@@ -1,4 +1,3 @@
-
 import { Trade, Account, TagGroup, MonthlyNoteData } from '../types';
 
 const API_BASE = '/api';

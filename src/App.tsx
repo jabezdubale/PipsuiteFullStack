@@ -129,9 +129,6 @@ const AddTradeSidePanel = ({
       if (riskAmount > 0 && rewardAmount > 0) {
           rr = rewardAmount / riskAmount;
       }
-
-      // Auto-detect direction if TP/SL provided but type mismatch? 
-      // (Optional: enforce type based on prices, but let's trust user selection or warn)
       
       return { riskAmount, rewardAmount, rr, asset };
   }, [formData]);
@@ -162,11 +159,11 @@ const AddTradeSidePanel = ({
           type: formData.type,
           status: TradeStatus.OPEN,
           outcome: TradeOutcome.OPEN,
-          entryPrice: parseFloat(formData.entryPrice),
+          entryPrice: parseFloat(formData.entryPrice) || 0, // Ensure valid number
           entryDate: entryDateObj.toISOString(),
           entryTime,
           entrySession,
-          quantity: parseFloat(formData.quantity),
+          quantity: parseFloat(formData.quantity) || 0, // Ensure valid number
           stopLoss: formData.stopLoss ? parseFloat(formData.stopLoss) : undefined,
           takeProfit: formData.takeProfit ? parseFloat(formData.takeProfit) : undefined,
           setup: formData.setup,
@@ -506,7 +503,6 @@ function App() {
 
   const handleSaveTrade = async (trade: Trade, shouldClose: boolean = true) => {
     try {
-        // If trade already exists, update it. If not, add it.
         let updatedTrades: Trade[];
         const exists = trades.find(t => t.id === trade.id);
         
@@ -522,9 +518,12 @@ function App() {
             setViewingTrade(null);
             setShowAddTrade(false);
         }
-    } catch (e) {
+    } catch (e: any) {
+        // Log detailed error and alert user
         console.error("Failed to save trade:", e);
-        alert("Failed to save trade. Please check your connection or try again.");
+        // Attempt to parse API error message if available
+        const errorMsg = e.message || "Unknown error";
+        alert(`Failed to save trade. Server response: ${errorMsg}`);
     }
   };
 

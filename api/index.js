@@ -1,3 +1,4 @@
+
 require('dotenv').config();
 const express = require('express');
 const cors = require('cors');
@@ -10,7 +11,6 @@ app.use(cors());
 app.use(express.json({ limit: '50mb' }));
 
 // PostgreSQL Connection
-// Note: We create the pool but don't connect immediately to allow server startup even if DB config is missing initially
 let pool;
 
 const getDB = () => {
@@ -39,7 +39,7 @@ const toCamelCase = (row) => {
     return newRow;
 };
 
-// Helper to parse trade rows from DB to ensure numbers are numbers (not strings)
+// Helper to parse trade rows
 const parseTradeRow = (row) => {
     const t = toCamelCase(row);
     t.entryPrice = parseFloat(t.entryPrice);
@@ -56,7 +56,6 @@ const parseTradeRow = (row) => {
     return t;
 };
 
-// Helper to convert camelCase trade object to snake_case for DB insert
 const mapTradeToParams = (t) => [
     t.id, t.accountId, t.symbol, t.type, t.status, t.outcome,
     t.entryPrice, t.exitPrice, t.stopLoss, t.takeProfit, t.quantity,
@@ -70,7 +69,7 @@ const mapTradeToParams = (t) => [
     t.isDeleted || false, t.deletedAt, t.isBalanceUpdated || false
 ];
 
-// --- Middleware to check DB connection ---
+// --- Middleware ---
 app.use(async (req, res, next) => {
     const db = getDB();
     if (!db) {
@@ -80,14 +79,12 @@ app.use(async (req, res, next) => {
     next();
 });
 
-// --- API Routes ---
-
-// INITIALIZE DB (Run this once to create tables)
-app.get('/api/init', async (req, res) => {
+// --- Auto-Migration Helper ---
+const ensureSchema = async (db) => {
     try {
-        await req.db.query(`
+        // Base Tables
+        await db.query(`
             CREATE TABLE IF NOT EXISTS app_settings (key VARCHAR(255) PRIMARY KEY, value JSONB);
-            
             CREATE TABLE IF NOT EXISTS accounts (
                 id VARCHAR(255) PRIMARY KEY,
                 name VARCHAR(255) NOT NULL,
@@ -96,67 +93,64 @@ app.get('/api/init', async (req, res) => {
                 is_demo BOOLEAN DEFAULT false,
                 type VARCHAR(50) DEFAULT 'Real'
             );
-            
             CREATE TABLE IF NOT EXISTS monthly_notes (
                 month_key VARCHAR(20) PRIMARY KEY,
                 goals TEXT,
                 notes TEXT,
                 review TEXT
             );
-            
             CREATE TABLE IF NOT EXISTS trades (
                 id VARCHAR(255) PRIMARY KEY,
-                account_id VARCHAR(255) REFERENCES accounts(id) ON DELETE CASCADE,
-                symbol VARCHAR(20),
-                type VARCHAR(20),
-                status VARCHAR(20),
-                outcome VARCHAR(20),
-                entry_price DECIMAL(20, 5),
-                exit_price DECIMAL(20, 5),
-                stop_loss DECIMAL(20, 5),
-                take_profit DECIMAL(20, 5),
-                quantity DECIMAL(20, 5),
-                fees DECIMAL(20, 2),
-                main_pnl DECIMAL(20, 2),
-                pnl DECIMAL(20, 2),
-                balance DECIMAL(20, 2),
-                created_at TIMESTAMP,
-                entry_date TIMESTAMP,
-                exit_date TIMESTAMP,
-                entry_time VARCHAR(20),
-                exit_time VARCHAR(20),
-                entry_session VARCHAR(50),
-                exit_session VARCHAR(50),
-                order_type VARCHAR(50),
-                setup VARCHAR(100),
-                leverage DECIMAL(10, 2),
-                risk_percentage DECIMAL(10, 2),
-                notes TEXT,
-                emotional_notes TEXT,
-                tags JSONB DEFAULT '[]',
-                screenshots JSONB DEFAULT '[]',
-                partials JSONB DEFAULT '[]',
-                is_deleted BOOLEAN DEFAULT false,
-                deleted_at TIMESTAMP,
-                is_balance_updated BOOLEAN DEFAULT false
+                account_id VARCHAR(255) REFERENCES accounts(id) ON DELETE CASCADE
             );
         `);
-        res.status(200).send("Database tables initialized successfully! You can now use the app.");
+
+        // Add missing columns safely
+        const columns = [
+            "symbol VARCHAR(20)", "type VARCHAR(20)", "status VARCHAR(20)", "outcome VARCHAR(20)",
+            "entry_price DECIMAL(20, 5)", "exit_price DECIMAL(20, 5)", 
+            "stop_loss DECIMAL(20, 5)", "take_profit DECIMAL(20, 5)", 
+            "quantity DECIMAL(20, 5)", "fees DECIMAL(20, 2)", "main_pnl DECIMAL(20, 2)", 
+            "pnl DECIMAL(20, 2)", "balance DECIMAL(20, 2)",
+            "created_at TIMESTAMP", "entry_date TIMESTAMP", "exit_date TIMESTAMP",
+            "entry_time VARCHAR(20)", "exit_time VARCHAR(20)",
+            "entry_session VARCHAR(50)", "exit_session VARCHAR(50)",
+            "order_type VARCHAR(50)", "setup VARCHAR(100)",
+            "leverage DECIMAL(10, 2)", "risk_percentage DECIMAL(10, 2)",
+            "notes TEXT", "emotional_notes TEXT",
+            "tags JSONB DEFAULT '[]'", "screenshots JSONB DEFAULT '[]'", "partials JSONB DEFAULT '[]'",
+            "is_deleted BOOLEAN DEFAULT false", "deleted_at TIMESTAMP", "is_balance_updated BOOLEAN DEFAULT false"
+        ];
+
+        for (const colDef of columns) {
+            const colName = colDef.split(' ')[0];
+            try {
+                await db.query(`ALTER TABLE trades ADD COLUMN IF NOT EXISTS ${colDef}`);
+            } catch (e) {
+                // Ignore errors if column exists or type conflicts (simple migration)
+                console.log(`Column check/add for ${colName}: ${e.message}`);
+            }
+        }
     } catch (err) {
-        console.error(err);
-        res.status(500).json({ error: "Failed to initialize database: " + err.message });
+        console.error("Schema init failed:", err);
     }
+};
+
+// ROUTES
+
+app.get('/api/init', async (req, res) => {
+    await ensureSchema(req.db);
+    res.status(200).send("Database initialized and migrated.");
 });
 
-// GENERIC SETTINGS (Theme, Columns, User Profile, etc.)
+// GENERIC SETTINGS
 app.get('/api/settings/:key', async (req, res) => {
     const { key } = req.params;
     try {
         const result = await req.db.query("SELECT value FROM app_settings WHERE key = $1", [key]);
         res.json(result.rows.length > 0 ? result.rows[0].value : null);
     } catch (err) {
-        // If table doesn't exist, return null gracefully (first run)
-        if (err.code === '42P01') return res.json(null);
+        if (err.code === '42P01') { await ensureSchema(req.db); return res.json(null); }
         res.status(500).json({ error: err.message });
     }
 });
@@ -187,9 +181,7 @@ app.get('/api/accounts', async (req, res) => {
             type: row.type
         })));
     } catch (err) {
-        // Handle "relation does not exist" (First run)
-        if (err.code === '42P01') return res.json([]);
-        console.error(err);
+        if (err.code === '42P01') { await ensureSchema(req.db); return res.json([]); }
         res.status(500).json({ error: err.message });
     }
 });
@@ -215,7 +207,6 @@ app.post('/api/accounts', async (req, res) => {
             type: row.type
         })));
     } catch (err) {
-        console.error(err);
         res.status(500).json({ error: err.message });
     }
 });
@@ -237,8 +228,7 @@ app.get('/api/trades', async (req, res) => {
         const result = await req.db.query('SELECT * FROM trades ORDER BY entry_date DESC');
         res.json(result.rows.map(parseTradeRow));
     } catch (err) {
-        if (err.code === '42P01') return res.json([]);
-        console.error(err);
+        if (err.code === '42P01') { await ensureSchema(req.db); return res.json([]); }
         res.status(500).json({ error: err.message });
     }
 });
@@ -277,22 +267,30 @@ app.post('/api/trades', async (req, res) => {
         const result = await req.db.query('SELECT * FROM trades ORDER BY entry_date DESC');
         res.json(result.rows.map(parseTradeRow));
     } catch (err) {
-        console.error(err);
+        // Retry logic: try migrating schema once then retry insert
+        if (err.code === '42703' || err.code === '42P01') { 
+            await ensureSchema(req.db);
+            try {
+                await req.db.query(queryText, mapTradeToParams(t));
+                const result = await req.db.query('SELECT * FROM trades ORDER BY entry_date DESC');
+                return res.json(result.rows.map(parseTradeRow));
+            } catch (retryErr) {
+                return res.status(500).json({ error: retryErr.message });
+            }
+        }
         res.status(500).json({ error: err.message });
     }
 });
 
-// BATCH IMPORT TRADES
 app.post('/api/trades/batch', async (req, res) => {
     const { trades } = req.body;
     if (!trades || !Array.isArray(trades)) {
-        return res.status(400).json({ error: "Invalid data format. Expected array of trades." });
+        return res.status(400).json({ error: "Invalid data format." });
     }
 
     const client = await req.db.connect();
     try {
         await client.query('BEGIN');
-        
         const queryText = `
             INSERT INTO trades (
                 id, account_id, symbol, type, status, outcome,
@@ -322,23 +320,32 @@ app.post('/api/trades/batch', async (req, res) => {
         `;
 
         for (const t of trades) {
-            await client.query(queryText, mapTradeToParams(t));
+            try {
+                await client.query(queryText, mapTradeToParams(t));
+            } catch (err) {
+                if (err.code === '42703' || err.code === '42P01') {
+                    // Attempt schema fix on fly within transaction if possible
+                    await client.query('COMMIT'); // Commit what we have
+                    client.release();
+                    await ensureSchema(req.db); // Run migration on main pool
+                    return res.status(500).json({ error: "Schema updated. Please retry import." });
+                }
+                throw err;
+            }
         }
 
         await client.query('COMMIT');
-        
         const result = await client.query('SELECT * FROM trades ORDER BY entry_date DESC');
         res.json(result.rows.map(parseTradeRow));
     } catch (err) {
         await client.query('ROLLBACK');
-        console.error(err);
-        res.status(500).json({ error: "Batch import failed: " + err.message });
+        res.status(500).json({ error: err.message });
     } finally {
-        client.release();
+        // client.release() might be called above
+        if (client._connected) client.release();
     }
 });
 
-// BATCH DELETE TRADES
 app.delete('/api/trades/batch', async (req, res) => {
     const { ids } = req.body;
     try {
@@ -361,17 +368,12 @@ app.delete('/api/trades/:id', async (req, res) => {
     }
 });
 
-// TAGS
 app.get('/api/tags', async (req, res) => {
     try {
         const result = await req.db.query("SELECT value FROM app_settings WHERE key = 'tag_groups'");
-        if (result.rows.length > 0) {
-            res.json(result.rows[0].value);
-        } else {
-            res.json([]);
-        }
+        res.json(result.rows.length > 0 ? result.rows[0].value : []);
     } catch (err) {
-        if (err.code === '42P01') return res.json([]);
+        if (err.code === '42P01') { await ensureSchema(req.db); return res.json([]); }
         res.status(500).json({ error: err.message });
     }
 });
@@ -389,17 +391,12 @@ app.post('/api/tags', async (req, res) => {
     }
 });
 
-// STRATEGIES
 app.get('/api/strategies', async (req, res) => {
     try {
         const result = await req.db.query("SELECT value FROM app_settings WHERE key = 'strategies'");
-        if (result.rows.length > 0) {
-            res.json(result.rows[0].value);
-        } else {
-            res.json([]);
-        }
+        res.json(result.rows.length > 0 ? result.rows[0].value : []);
     } catch (err) {
-        if (err.code === '42P01') return res.json([]);
+        if (err.code === '42P01') { await ensureSchema(req.db); return res.json([]); }
         res.status(500).json({ error: err.message });
     }
 });
@@ -417,18 +414,13 @@ app.post('/api/strategies', async (req, res) => {
     }
 });
 
-// MONTHLY NOTES
 app.get('/api/monthly-notes/:key', async (req, res) => {
     const { key } = req.params;
     try {
         const result = await req.db.query('SELECT * FROM monthly_notes WHERE month_key = $1', [key]);
-        if (result.rows.length > 0) {
-            res.json(result.rows[0]);
-        } else {
-            res.json({});
-        }
+        res.json(result.rows.length > 0 ? result.rows[0] : {});
     } catch (err) {
-        if (err.code === '42P01') return res.json({});
+        if (err.code === '42P01') { await ensureSchema(req.db); return res.json({}); }
         res.status(500).json({ error: err.message });
     }
 });
@@ -449,12 +441,10 @@ app.post('/api/monthly-notes', async (req, res) => {
     }
 });
 
-// Start Server locally (Only if not running on Vercel)
 if (process.env.NODE_ENV !== 'production') {
     app.listen(PORT, '0.0.0.0', () => {
         console.log(`Backend Server running on port ${PORT}`);
     });
 }
 
-// Export for Vercel
 module.exports = app;

@@ -1,29 +1,21 @@
 
-import React, { useState, useEffect, useMemo } from 'react';
-import { 
-  getAccounts, saveAccount, deleteAccount, 
-  getTrades, saveTrade, deleteTrade, saveTrades, deleteTrades,
-  getTagGroups, saveTagGroups, 
-  getStrategies, saveStrategies,
-  getSetting, saveSetting
-} from './services/storageService';
-import { Trade, Account, TagGroup, TradeType, TradeStatus, TradeOutcome, OrderType, Session, ASSETS, User } from './types';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import Layout from './components/Layout';
 import Dashboard from './components/Dashboard';
 import TradeList from './components/TradeList';
 import CalendarView from './components/CalendarView';
 import TradeDetail from './components/TradeDetail';
 import TradeViewModal from './components/TradeViewModal';
-import TagManager from './components/TagManager';
-import StrategyManager from './components/StrategyManager';
+import DailyViewModal from './components/DailyViewModal';
 import AddAccountModal from './components/AddAccountModal';
 import DeleteConfirmationModal from './components/DeleteConfirmationModal';
 import DeleteAccountModal from './components/DeleteAccountModal';
-import DailyViewModal from './components/DailyViewModal';
-import AICoach from './components/AICoach';
-import Roadmap from './components/Roadmap';
+import TagManager from './components/TagManager';
+import StrategyManager from './components/StrategyManager';
+import { getTrades, saveTrade, deleteTrades, getAccounts, saveAccount, deleteAccount, getTagGroups, saveTagGroups, getStrategies, saveStrategies, saveTrades, getSetting, saveSetting } from './services/storageService';
+import { Trade, TradeStats, Account, TradeType, TradeStatus, ASSETS, TagGroup, OrderType, Session, TradeOutcome, User } from './types';
+import { X, Loader2 } from 'lucide-react';
 import UserModal from './components/UserModal';
-import { Eraser, X, Plus, Check } from 'lucide-react';
 import { calculateAutoTags } from './utils/autoTagLogic';
 import { getSessionForTime } from './utils/sessionHelpers';
 
@@ -119,7 +111,9 @@ const AddTradeSidePanel = ({
           pnl: 0,
           fees: 0,
           screenshots: [],
-          createdAt: new Date().toISOString()
+          createdAt: new Date().toISOString(),
+          isDeleted: false,
+          isBalanceUpdated: false
       };
 
       onSave(newTrade);
@@ -131,11 +125,8 @@ const AddTradeSidePanel = ({
 
   return (
       <div className="fixed inset-0 z-50 flex justify-end">
-          {/* Backdrop */}
           <div className="absolute inset-0 bg-black/50 backdrop-blur-sm transition-opacity" onClick={onClose}></div>
-          
-          {/* Panel */}
-          <div className="relative w-full max-w-md bg-surface shadow-2xl h-full flex flex-col animate-in slide-in-from-right duration-300">
+          <div className="relative w-full max-w-md bg-surface shadow-2xl h-full flex flex-col animate-in slide-in-from-right duration-300 border-l border-border">
               <div className="p-4 border-b border-border flex justify-between items-center bg-surfaceHighlight/30">
                   <h3 className="font-bold text-lg">Add New Trade</h3>
                   <button onClick={onClose} className="p-2 hover:bg-surfaceHighlight rounded-full text-textMuted hover:text-textMain">
@@ -145,7 +136,6 @@ const AddTradeSidePanel = ({
               
               <div className="flex-1 overflow-y-auto p-5">
                   <form id="add-trade-form" onSubmit={handleSubmit} className="space-y-5">
-                      {/* Asset & Direction */}
                       <div className="grid grid-cols-2 gap-4">
                           <div>
                               <label className="block text-xs font-medium text-textMuted mb-1">Asset Pair</label>
@@ -178,7 +168,6 @@ const AddTradeSidePanel = ({
                           </div>
                       </div>
 
-                      {/* Entry & Size */}
                       <div className="grid grid-cols-2 gap-4">
                           <div>
                               <label className="block text-xs font-medium text-textMuted mb-1">Entry Price</label>
@@ -204,7 +193,6 @@ const AddTradeSidePanel = ({
                           </div>
                       </div>
 
-                      {/* Time */}
                       <div>
                           <label className="block text-xs font-medium text-textMuted mb-1">Date & Time</label>
                           <input 
@@ -216,7 +204,6 @@ const AddTradeSidePanel = ({
                           />
                       </div>
 
-                      {/* Risk Management */}
                       <div className="grid grid-cols-2 gap-4">
                           <div>
                               <label className="block text-xs font-medium text-textMuted mb-1">Stop Loss</label>
@@ -242,7 +229,6 @@ const AddTradeSidePanel = ({
                           </div>
                       </div>
 
-                      {/* Details */}
                       <div>
                           <label className="block text-xs font-medium text-textMuted mb-1">Strategy</label>
                           <select 
@@ -280,28 +266,12 @@ const AddTradeSidePanel = ({
                   </form>
               </div>
 
-              {/* Footer provided in snippet */}
-              <div className="p-4 border-t border-border flex gap-3 shrink-0 bg-surface rounded-b-xl relative">
-                  {accounts.length === 0 && (
-                      <div className="absolute -top-3 left-1/2 -translate-x-1/2 z-20">
-                          <span className="bg-loss text-white text-[10px] font-bold px-2 py-0.5 rounded shadow-lg whitespace-nowrap">
-                              No Account Found
-                          </span>
-                      </div>
-                  )}
-                  <button
-                      type="button"
-                      onClick={handleClearForm}
-                      className="px-4 py-2 bg-surface border border-border hover:bg-surfaceHighlight text-textMuted hover:text-textMain rounded-lg font-medium text-sm transition-colors flex items-center justify-center gap-2"
-                      title="Clear Form"
-                  >
-                      <Eraser size={16} />
-                  </button>
+              <div className="p-4 border-t border-border flex gap-3 shrink-0 bg-surface">
                   <button 
                       type="submit" 
                       form="add-trade-form"
                       disabled={accounts.length === 0}
-                      className={`flex-1 py-2 rounded-lg font-bold text-sm shadow-md transition-all ${
+                      className={`w-full py-2 rounded-lg font-bold text-sm shadow-md transition-all ${
                           accounts.length === 0 
                           ? 'bg-surfaceHighlight text-textMuted cursor-not-allowed opacity-50 blur-[1px]' 
                           : 'bg-primary hover:bg-blue-600 text-white'
@@ -316,189 +286,265 @@ const AddTradeSidePanel = ({
 };
 
 function App() {
-  // --- STATE ---
-  const [activeTab, setActiveTab] = useState('dashboard');
-  const [accounts, setAccounts] = useState<Account[]>([]);
-  const [selectedAccountId, setSelectedAccountId] = useState<string>('');
+  const [activeTab, setActiveTab] = useState('dashboard'); 
+  const [subView, setSubView] = useState<'list' | 'detail'>('list'); 
+  const [selectedTradeId, setSelectedTradeId] = useState<string | null>(null);
   const [trades, setTrades] = useState<Trade[]>([]);
+  const [accounts, setAccounts] = useState<Account[]>([]);
   const [tagGroups, setTagGroups] = useState<TagGroup[]>([]);
   const [strategies, setStrategies] = useState<string[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [selectedAccountId, setSelectedAccountId] = useState<string>('');
+  const [startDate, setStartDate] = useState(() => {
+      const now = new Date();
+      return new Date(now.getFullYear(), now.getMonth(), 1).toISOString().split('T')[0];
+  });
+  const [endDate, setEndDate] = useState(() => {
+      const now = new Date();
+      return new Date(now.getFullYear(), now.getMonth() + 1, 0).toISOString().split('T')[0];
+  });
+  const [currentCalendarMonth, setCurrentCalendarMonth] = useState(new Date());
+  const [selectedDailyDate, setSelectedDailyDate] = useState<string | null>(null);
   
-  // UI State - initialized to defaults, then updated from DB
-  const [isDarkMode, setIsDarkMode] = useState(false);
+  // UI State
   const [showAddTrade, setShowAddTrade] = useState(false);
-  const [editingTrade, setEditingTrade] = useState<Trade | null>(null);
-  const [viewingTrade, setViewingTrade] = useState<Trade | null>(null);
-  const [dailyViewDate, setDailyViewDate] = useState<string | null>(null);
-  const [user, setUser] = useState<User | null>(null);
-  
-  // Modals
-  const [isUserModalOpen, setIsUserModalOpen] = useState(false);
   const [isAddAccountModalOpen, setIsAddAccountModalOpen] = useState(false);
+  const [isViewModalOpen, setIsViewModalOpen] = useState(false);
+  const [isUserModalOpen, setIsUserModalOpen] = useState(false);
+  const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
+  const [tradesToDelete, setTradesToDelete] = useState<string[]>([]);
   const [accountToDelete, setAccountToDelete] = useState<Account | null>(null);
-
-  // Calendar State
-  const [currentMonth, setCurrentMonth] = useState(new Date());
-
-  // --- EFFECTS ---
+  
+  const [isDarkMode, setIsDarkMode] = useState(() => {
+      const savedTheme = localStorage.getItem('pipsuite_theme');
+      return savedTheme ? savedTheme === 'dark' : true; 
+  });
+  const [user, setUser] = useState<User | null>(null);
 
   useEffect(() => {
-    const initData = async () => {
-      // 1. Theme & User (Sync from DB)
-      const themePref = await getSetting<string>('pipsuite_theme', 'light');
-      setIsDarkMode(themePref === 'dark');
-      
-      const userProfile = await getSetting<User | null>('pipsuite_user', null);
-      setUser(userProfile);
+    const loadData = async () => {
+      setIsLoading(true);
+      try {
+        const [userProfile, datePref, activeTabPref] = await Promise.all([
+            getSetting<User | null>('pipsuite_user', null),
+            getSetting<{start: string, end: string} | null>('pipsuite_date_range', null),
+            getSetting<string>('pipsuite_active_tab', 'dashboard')
+        ]);
+        
+        setUser(userProfile);
+        if (datePref) {
+            setStartDate(datePref.start);
+            setEndDate(datePref.end);
+        }
+        if (activeTabPref) {
+            setActiveTab(activeTabPref);
+        }
 
-      // 2. Data
-      const accs = await getAccounts();
-      setAccounts(accs);
-      if (accs.length > 0) setSelectedAccountId(accs[0].id);
+        const [loadedAccounts, loadedTrades, loadedTags, loadedStrategies] = await Promise.all([
+          getAccounts(), getTrades(), getTagGroups(), getStrategies()
+        ]);
+        
+        const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).getTime();
+        const tradesToCleanup = loadedTrades.filter(t => t.isDeleted && t.deletedAt && new Date(t.deletedAt).getTime() < thirtyDaysAgo).map(t => t.id);
+        
+        let initialTrades = loadedTrades;
+        if (tradesToCleanup.length > 0) {
+            initialTrades = await deleteTrades(tradesToCleanup);
+        }
 
-      const trds = await getTrades();
-      setTrades(trds);
-
-      const tgs = await getTagGroups();
-      setTagGroups(tgs);
-
-      const strats = await getStrategies();
-      setStrategies(strats);
+        setAccounts(loadedAccounts);
+        setTrades(initialTrades);
+        setTagGroups(loadedTags);
+        setStrategies(loadedStrategies);
+        
+        const savedAccountId = localStorage.getItem('pipsuite_selected_account_id');
+        if (savedAccountId && loadedAccounts.some(acc => acc.id === savedAccountId)) {
+            setSelectedAccountId(savedAccountId);
+        } else if (loadedAccounts.length > 0) {
+            setSelectedAccountId(loadedAccounts[0].id);
+        }
+      } catch (error) {
+        console.error("Failed to load data:", error);
+      } finally {
+        setIsLoading(false);
+      }
     };
-    initData();
+    loadData();
   }, []);
 
+  const handleAccountChange = (id: string) => {
+      setSelectedAccountId(id);
+      localStorage.setItem('pipsuite_selected_account_id', id);
+  };
+
   useEffect(() => {
-    if (isDarkMode) {
-      document.documentElement.classList.add('dark');
-    } else {
-      document.documentElement.classList.remove('dark');
-    }
+    if (isDarkMode) document.documentElement.classList.add('dark');
+    else document.documentElement.classList.remove('dark');
   }, [isDarkMode]);
 
-  const toggleTheme = () => {
-      const newTheme = !isDarkMode ? 'dark' : 'light';
-      setIsDarkMode(!isDarkMode);
-      saveSetting('pipsuite_theme', newTheme);
+  const handleDateRangeChange = (newStart: string, newEnd: string) => {
+      setStartDate(newStart);
+      setEndDate(newEnd);
+      saveSetting('pipsuite_date_range', { start: newStart, end: newEnd });
   };
 
-  // --- COMPUTED ---
-  // GLOBAL FILTER: Only filters by Account and "Not Deleted". 
-  // Date filtering is now handled locally in Dashboard.tsx
-  const currentAccountTrades = useMemo(() => {
-      if (!selectedAccountId) return [];
-      return trades.filter(t => t.accountId === selectedAccountId && !t.isDeleted);
-  }, [trades, selectedAccountId]);
-  
+  const handleTabChange = (tab: string) => {
+      setActiveTab(tab);
+      setSubView('list');
+      saveSetting('pipsuite_active_tab', tab);
+  };
+
+  const filteredTrades = useMemo(() => {
+    return trades.filter(t => {
+      if (t.isDeleted) return false;
+      const tDate = new Date(t.entryDate || t.createdAt);
+      const start = new Date(startDate);
+      const end = new Date(endDate);
+      end.setHours(23, 59, 59, 999);
+      const dateMatch = tDate >= start && tDate <= end;
+      const accountMatch = t.accountId === selectedAccountId;
+      return dateMatch && accountMatch;
+    });
+  }, [trades, startDate, endDate, selectedAccountId]);
+
   const trashTrades = useMemo(() => {
-    if (!selectedAccountId) return [];
-    return trades.filter(t => t.accountId === selectedAccountId && t.isDeleted);
+      return trades.filter(t => t.isDeleted && t.accountId === selectedAccountId);
   }, [trades, selectedAccountId]);
 
-  // Global Stats (passed to dashboard, but dashboard can recalculate based on its own filter)
-  const stats = useMemo(() => {
-      const wins = currentAccountTrades.filter(t => t.pnl > 0);
-      const losses = currentAccountTrades.filter(t => t.pnl < 0);
-      const totalTrades = currentAccountTrades.length;
-      
-      const netPnL = currentAccountTrades.reduce((acc, t) => acc + t.pnl, 0);
-      const winRate = totalTrades > 0 ? (wins.length / totalTrades) * 100 : 0;
-      const totalWon = wins.reduce((acc, t) => acc + t.pnl, 0);
-      const totalLost = Math.abs(losses.reduce((acc, t) => acc + t.pnl, 0));
-      const profitFactor = totalLost === 0 ? totalWon : totalWon / totalLost;
-      
-      return {
-          totalTrades,
-          winRate,
-          netPnL,
-          avgWin: wins.length > 0 ? totalWon / wins.length : 0,
-          avgLoss: losses.length > 0 ? totalLost / losses.length : 0,
-          profitFactor,
-          bestTrade: Math.max(...currentAccountTrades.map(t => t.pnl), 0),
-          worstTrade: Math.min(...currentAccountTrades.map(t => t.pnl), 0)
-      };
-  }, [currentAccountTrades]);
+  const selectedDailyTrades = useMemo(() => {
+      if (!selectedDailyDate) return [];
+      return trades.filter(t => {
+          if (t.isDeleted) return false;
+          const tDate = new Date(t.entryDate || t.createdAt).toLocaleDateString('en-CA');
+          return tDate === selectedDailyDate && t.accountId === selectedAccountId;
+      });
+  }, [trades, selectedDailyDate, selectedAccountId]);
 
-  // --- HANDLERS ---
+  const stats: TradeStats = useMemo(() => {
+    const totalTrades = filteredTrades.length;
+    if (totalTrades === 0) return { totalTrades: 0, winRate: 0, netPnL: 0, avgWin: 0, avgLoss: 0, profitFactor: 0, bestTrade: 0, worstTrade: 0 };
+    const wins = filteredTrades.filter(t => t.pnl > 0);
+    const losses = filteredTrades.filter(t => t.pnl <= 0);
+    const totalWinPnl = wins.reduce((sum, t) => sum + t.pnl, 0);
+    const totalLossPnl = Math.abs(losses.reduce((sum, t) => sum + t.pnl, 0));
+    return {
+      totalTrades,
+      winRate: (wins.length / totalTrades) * 100,
+      netPnL: totalWinPnl - totalLossPnl,
+      avgWin: wins.length ? totalWinPnl / wins.length : 0,
+      avgLoss: losses.length ? totalLossPnl / losses.length : 0,
+      profitFactor: totalLossPnl === 0 ? totalWinPnl : totalWinPnl / totalLossPnl,
+      bestTrade: Math.max(...filteredTrades.map(t => t.pnl), 0),
+      worstTrade: Math.min(...filteredTrades.map(t => t.pnl), 0)
+    };
+  }, [filteredTrades]);
 
   const handleSaveTrade = async (trade: Trade, shouldClose: boolean = true) => {
-    // If trade already exists, update it. If not, add it.
-    let updatedTrades: Trade[];
-    const exists = trades.find(t => t.id === trade.id);
-    
-    if (exists) {
-        updatedTrades = await saveTrade(trade);
-    } else {
-        updatedTrades = await saveTrade(trade);
-    }
-    setTrades(updatedTrades);
-
-    if (shouldClose) {
-        setEditingTrade(null);
-        setViewingTrade(null);
-        setShowAddTrade(false);
+    try {
+        const updatedTrades = await saveTrade(trade);
+        setTrades(updatedTrades);
+        if (shouldClose) setShowAddTrade(false);
+    } catch (e) {
+        alert("Failed to save trade. Check connection or data.");
     }
   };
 
-  const handleSoftDeleteTrade = async (id: string) => {
-    const trade = trades.find(t => t.id === id);
-    if (trade) {
-       await saveTrade({ ...trade, isDeleted: true, deletedAt: new Date().toISOString() });
-       const updated = await getTrades();
-       setTrades(updated);
-       
-       // Revert balance if deleted trade had affected balance
-       if (trade.isBalanceUpdated && trade.outcome === TradeOutcome.CLOSED) {
-          handleUpdateBalance(Math.abs(trade.pnl), trade.pnl >= 0 ? 'withdraw' : 'deposit');
-       }
-    }
-    setViewingTrade(null);
-    setEditingTrade(null);
-  };
-
-  const handlePermanentDeleteTrade = async (id: string) => {
-      await deleteTrade(id);
-      setTrades(await getTrades());
-  };
-  
-  const handleRestoreTrades = async (ids: string[]) => {
-      const allTrades = await getTrades();
-      const updated = allTrades.map(t => ids.includes(t.id) ? { ...t, isDeleted: false, deletedAt: undefined } : t);
-      for (const t of updated) {
-          if (ids.includes(t.id)) await saveTrade(t);
+  const handleImportTrades = async (newTrades: Trade[]) => {
+      try {
+          const updatedTrades = await saveTrades(newTrades);
+          setTrades(updatedTrades);
+          alert(`Successfully imported ${newTrades.length} trades.`);
+      } catch (e) {
+          alert("Failed to import trades. Check DB connection.");
       }
-      setTrades(await getTrades());
   };
 
-  const handleAddAccount = async (account: Account) => {
-      const updated = await saveAccount(account);
-      setAccounts(updated);
-      setSelectedAccountId(account.id);
+  const handleRequestDelete = (ids: string[]) => {
+      if (ids.length === 0) return;
+      setTradesToDelete(ids);
+      setIsDeleteModalOpen(true);
   };
 
-  const handleDeleteAccount = async () => {
+  const executeDelete = async () => {
+      if (tradesToDelete.length === 0) return;
+      try {
+          if (activeTab === 'trash') {
+              const updatedTrades = await deleteTrades(tradesToDelete);
+              setTrades(updatedTrades);
+          } else {
+              const tradesToTrash = trades.filter(t => tradesToDelete.includes(t.id));
+              const updatedTrades = trades.map(t => {
+                  if (tradesToDelete.includes(t.id)) return { ...t, isDeleted: true, deletedAt: new Date().toISOString() };
+                  return t;
+              });
+              for (const t of updatedTrades.filter(ut => tradesToDelete.includes(ut.id))) await saveTrade(t);
+              setTrades(updatedTrades);
+          }
+          if (selectedTradeId && tradesToDelete.includes(selectedTradeId)) {
+              setIsViewModalOpen(false);
+              setSubView('list');
+              setSelectedTradeId(null);
+          }
+      } catch (e) {
+          alert("Failed to delete trades.");
+      } finally {
+          setIsDeleteModalOpen(false);
+          setTradesToDelete([]);
+      }
+  };
+
+  const handleRestoreTrades = async (ids: string[]) => {
+      try {
+          const updatedTrades = trades.map(t => {
+              if (ids.includes(t.id)) return { ...t, isDeleted: false, deletedAt: undefined };
+              return t;
+          });
+          for (const t of updatedTrades.filter(ut => ids.includes(ut.id))) await saveTrade(t);
+          setTrades(updatedTrades);
+      } catch (e) {
+          alert("Failed to restore trades.");
+      }
+  };
+
+  const handleAddAccount = async (accountData: Account) => {
+      try {
+        const updatedAccounts = await saveAccount({ ...accountData });
+        setAccounts(updatedAccounts);
+        handleAccountChange(accountData.id);
+      } catch (e) {
+        alert("Failed to create account.");
+      }
+  };
+
+  const handleRequestDeleteAccount = (account: Account) => setAccountToDelete(account);
+
+  const handleExecuteDeleteAccount = async (fallbackAccountId: string) => {
       if (!accountToDelete) return;
-      await deleteAccount(accountToDelete.id);
-      const updated = await getAccounts();
-      setAccounts(updated);
-      if (updated.length > 0) setSelectedAccountId(updated[0].id);
-      else setSelectedAccountId('');
-      setAccountToDelete(null);
+      try {
+          await deleteAccount(accountToDelete.id);
+          const newAccounts = accounts.filter(a => a.id !== accountToDelete.id);
+          setAccounts(newAccounts);
+          setTrades(prev => prev.filter(t => t.accountId !== accountToDelete.id));
+          if (fallbackAccountId && newAccounts.find(a => a.id === fallbackAccountId)) handleAccountChange(fallbackAccountId);
+          else if (newAccounts.length > 0) handleAccountChange(newAccounts[0].id);
+          else handleAccountChange('');
+          setAccountToDelete(null);
+      } catch (e) {
+          alert("Failed to delete account");
+      }
   };
 
   const handleUpdateBalance = async (amount: number, type: 'deposit' | 'withdraw') => {
       const account = accounts.find(a => a.id === selectedAccountId);
-      if (!account) return;
-
-      const newBalance = type === 'deposit' ? account.balance + amount : account.balance - amount;
-      const updatedAccount = { ...account, balance: newBalance };
-      await saveAccount(updatedAccount);
-      setAccounts(await getAccounts());
-  };
-
-  const handleImportTrades = async (importedTrades: Trade[]) => {
-      const newTrades = await saveTrades(importedTrades);
-      setTrades(newTrades);
+      if (account) {
+          const newBalance = type === 'deposit' ? account.balance + amount : account.balance - amount;
+          try {
+            const updatedAccounts = await saveAccount({ ...account, balance: newBalance });
+            setAccounts(updatedAccounts);
+          } catch(e) {
+            alert("Failed to update balance.");
+          }
+      }
   };
 
   const handleUserUpdate = (userData: Partial<User>) => {
@@ -507,134 +553,66 @@ function App() {
       saveSetting('pipsuite_user', updatedUser);
   };
 
-  // --- RENDER ---
+  const navigateToTrade = (trade: Trade) => {
+    setSelectedTradeId(trade.id);
+    setIsViewModalOpen(true); 
+  };
 
-  if (editingTrade) {
-      return (
-          <TradeDetail 
-            trade={editingTrade}
-            accounts={accounts}
-            tagGroups={tagGroups}
-            strategies={strategies}
-            onSave={handleSaveTrade}
-            onDelete={handleSoftDeleteTrade}
-            onBack={() => setEditingTrade(null)}
-            onUpdateBalance={handleUpdateBalance}
-          />
-      );
-  }
+  const renderContent = () => {
+    if (subView === 'detail' && selectedTradeId) {
+       const trade = trades.find(t => t.id === selectedTradeId);
+       if (trade) return <TradeDetail trade={trade} onSave={handleSaveTrade} onDelete={(id) => handleRequestDelete([id])} onBack={() => setSubView('list')} accounts={accounts} tagGroups={tagGroups} strategies={strategies} onUpdateBalance={handleUpdateBalance} />;
+    }
+    switch (activeTab) {
+      case 'dashboard': return <Dashboard stats={stats} trades={filteredTrades} tagGroups={tagGroups} />;
+      case 'calendar': return <CalendarView trades={filteredTrades} currentMonth={currentCalendarMonth} setCurrentMonth={setCurrentCalendarMonth} onDayClick={(dateStr) => setSelectedDailyDate(dateStr)} />;
+      case 'journal': return <TradeList trades={filteredTrades} selectedAccountId={selectedAccountId} onTradeClick={navigateToTrade} onDeleteTrade={(id) => handleRequestDelete([id])} onDeleteTrades={handleRequestDelete} onImportTrades={handleImportTrades} tagGroups={tagGroups} />;
+      case 'trash': return <TradeList trades={trashTrades} selectedAccountId={selectedAccountId} onTradeClick={() => {}} onDeleteTrade={(id) => handleRequestDelete([id])} onDeleteTrades={handleRequestDelete} isTrash={true} onRestoreTrades={handleRestoreTrades} tagGroups={tagGroups} />;
+      case 'settings': return (
+          <div className="p-8 max-w-2xl mx-auto space-y-8 animate-in fade-in duration-500">
+            <div className="flex justify-between items-center"><h2 className="text-xl font-bold">Settings</h2></div>
+            <div className="bg-surface border border-border rounded-xl p-6 shadow-sm space-y-6">
+               <div className="flex justify-between items-center mb-2"><h3 className="font-semibold">User Profile</h3><button onClick={() => setIsUserModalOpen(true)} className="text-primary text-sm hover:underline">Edit</button></div>
+               {user ? <div className="space-y-1"><p className="text-sm"><span className="text-textMuted">Name:</span> {user.name}</p></div> : <p className="text-sm text-textMuted italic">No profile set.</p>}
+            </div>
+            <div className="bg-surface border border-border rounded-xl p-6 shadow-sm">
+               <div className="flex justify-between items-center mb-4"><h3 className="font-semibold">Trading Accounts</h3><button onClick={() => setIsAddAccountModalOpen(true)} className="text-primary text-sm font-medium hover:underline">+ Add New Account</button></div>
+               <ul className="space-y-2">{accounts.map(acc => (<li key={acc.id} className="flex justify-between items-center p-3 bg-background rounded border border-border"><div className="flex flex-col"><span className="font-medium text-sm">{acc.name}</span><span className="text-xs text-textMuted">{acc.type} - {acc.currency}</span></div><div className="flex items-center gap-4"><span className="text-textMuted font-mono text-sm">${acc.balance.toLocaleString()}</span><button onClick={() => handleRequestDeleteAccount(acc)} className="text-textMuted hover:text-loss p-1"><X size={16} /></button></div></li>))}</ul>
+            </div>
+            <StrategyManager strategies={strategies} onUpdate={(s) => { saveStrategies(s); setStrategies(s); }} />
+            <TagManager groups={tagGroups} onUpdate={(g) => { saveTagGroups(g); setTagGroups(g); }} />
+          </div>
+        );
+      default: return <Dashboard stats={stats} trades={filteredTrades} tagGroups={tagGroups} />;
+    }
+  };
+
+  const toggleTheme = () => {
+      const newTheme = !isDarkMode ? 'dark' : 'light';
+      setIsDarkMode(!isDarkMode);
+      localStorage.setItem('pipsuite_theme', newTheme);
+  };
+
+  if (isLoading) return <div className="h-screen flex items-center justify-center bg-background text-textMain"><div className="flex flex-col items-center gap-4"><Loader2 className="animate-spin text-primary" size={48} /><p className="text-textMuted font-medium">Loading Journal...</p></div></div>;
 
   return (
-    <Layout
-      activeTab={activeTab}
-      setActiveTab={setActiveTab}
-      accounts={accounts}
+    <Layout 
+      activeTab={activeTab} 
+      setActiveTab={handleTabChange}
+      accounts={accounts} 
       selectedAccountId={selectedAccountId}
-      setSelectedAccountId={setSelectedAccountId}
-      onAddTradeClick={() => setShowAddTrade(true)}
+      setSelectedAccountId={handleAccountChange}
+      onAddTradeClick={() => setShowAddTrade(true)} // Correctly opens side panel
+      startDate={startDate}
+      setStartDate={(d) => handleDateRangeChange(d, endDate)}
+      endDate={endDate}
+      setEndDate={(d) => handleDateRangeChange(startDate, d)}
       toggleTheme={toggleTheme}
       isDarkMode={isDarkMode}
       onUpdateBalance={handleUpdateBalance}
     >
-      {/* Content Switcher */}
-      {activeTab === 'dashboard' && (
-          <div className="space-y-6">
-              <Dashboard 
-                stats={stats} 
-                trades={currentAccountTrades} 
-                tagGroups={tagGroups} 
-              />
-              <AICoach trades={currentAccountTrades} />
-          </div>
-      )}
+      {renderContent()}
 
-      {activeTab === 'journal' && (
-          <TradeList 
-            trades={currentAccountTrades}
-            selectedAccountId={selectedAccountId}
-            onTradeClick={(t) => setViewingTrade(t)}
-            onDeleteTrade={handleSoftDeleteTrade}
-            onImportTrades={handleImportTrades}
-            tagGroups={tagGroups}
-          />
-      )}
-
-      {activeTab === 'calendar' && (
-          <CalendarView 
-             trades={currentAccountTrades}
-             currentMonth={currentMonth}
-             setCurrentMonth={setCurrentMonth}
-             onDayClick={(date, dayTrades) => setDailyViewDate(date)}
-          />
-      )}
-
-      {activeTab === 'trash' && (
-           <TradeList 
-            trades={trashTrades}
-            selectedAccountId={selectedAccountId}
-            onTradeClick={(t) => setViewingTrade(t)}
-            onDeleteTrade={handlePermanentDeleteTrade}
-            onDeleteTrades={(ids) => ids.forEach(id => handlePermanentDeleteTrade(id))}
-            onRestoreTrades={handleRestoreTrades}
-            isTrash={true}
-            tagGroups={tagGroups}
-          />
-      )}
-      
-      {activeTab === 'settings' && (
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-6 pb-20">
-              <div className="space-y-6">
-                  {/* User Profile */}
-                  <div className="bg-surface border border-border rounded-xl p-6 shadow-sm">
-                      <div className="flex justify-between items-center mb-4">
-                          <h3 className="font-bold text-lg">User Profile</h3>
-                          <button onClick={() => setIsUserModalOpen(true)} className="text-primary hover:underline text-sm">Edit</button>
-                      </div>
-                      {user ? (
-                          <div className="space-y-2">
-                              <p className="text-sm"><span className="text-textMuted">Name:</span> {user.name}</p>
-                              <p className="text-sm"><span className="text-textMuted">API Key:</span> {user.twelveDataApiKey ? '••••••••' : 'Not Set'}</p>
-                          </div>
-                      ) : (
-                          <p className="text-sm text-textMuted italic">No profile set.</p>
-                      )}
-                  </div>
-
-                  {/* Account Management */}
-                  <div className="bg-surface border border-border rounded-xl p-6 shadow-sm">
-                       <div className="flex justify-between items-center mb-4">
-                          <h3 className="font-bold text-lg">Accounts</h3>
-                          <button onClick={() => setIsAddAccountModalOpen(true)} className="bg-primary text-white px-3 py-1.5 rounded text-xs font-bold flex items-center gap-1">
-                              <Plus size={14} /> Add
-                          </button>
-                      </div>
-                      <div className="space-y-2">
-                          {accounts.map(acc => (
-                              <div key={acc.id} className="flex justify-between items-center p-3 bg-surfaceHighlight/30 border border-border rounded-lg">
-                                  <div>
-                                      <div className="font-bold text-sm">{acc.name}</div>
-                                      <div className="text-xs text-textMuted">{acc.type} • {acc.currency}</div>
-                                  </div>
-                                  <div className="flex items-center gap-3">
-                                      <span className="font-mono text-sm font-bold">${acc.balance.toLocaleString()}</span>
-                                      <button onClick={() => setAccountToDelete(acc)} className="text-textMuted hover:text-loss">
-                                          <X size={16} />
-                                      </button>
-                                  </div>
-                              </div>
-                          ))}
-                      </div>
-                  </div>
-              </div>
-              
-              <div className="space-y-6">
-                  <TagManager groups={tagGroups} onUpdate={saveTagGroups} />
-                  <StrategyManager strategies={strategies} onUpdate={saveStrategies} />
-              </div>
-          </div>
-      )}
-
-      {/* Slide-over Add Trade */}
       <AddTradeSidePanel 
           isOpen={showAddTrade} 
           onClose={() => setShowAddTrade(false)} 
@@ -644,41 +622,12 @@ function App() {
           onSave={handleSaveTrade}
       />
 
-      {/* Trade View Modal (Quick View) */}
-      {viewingTrade && (
-          <TradeViewModal 
-             trade={viewingTrade}
-             account={accounts.find(a => a.id === viewingTrade.accountId)}
-             onClose={() => setViewingTrade(null)}
-             onEdit={() => {
-                 setEditingTrade(viewingTrade);
-                 setViewingTrade(null);
-             }}
-             onDelete={() => handleSoftDeleteTrade(viewingTrade.id)}
-             onSave={handleSaveTrade}
-             tagGroups={tagGroups}
-             onUpdateBalance={handleUpdateBalance}
-          />
-      )}
-
-      {/* Daily View Modal (From Calendar) */}
-      {dailyViewDate && (
-          <DailyViewModal 
-             date={dailyViewDate}
-             trades={currentAccountTrades.filter(t => t.entryDate.startsWith(dailyViewDate))}
-             onClose={() => setDailyViewDate(null)}
-             onTradeClick={(t) => {
-                 setDailyViewDate(null);
-                 setViewingTrade(t);
-             }}
-          />
-      )}
-
-      {/* Helper Modals */}
-      {isUserModalOpen && <UserModal user={user} onSave={handleUserUpdate} onClose={() => setIsUserModalOpen(false)} />}
+      {selectedDailyDate && <DailyViewModal date={selectedDailyDate} trades={selectedDailyTrades} onClose={() => setSelectedDailyDate(null)} onTradeClick={navigateToTrade} />}
+      {isViewModalOpen && trades.find(t => t.id === selectedTradeId) && <TradeViewModal trade={trades.find(t => t.id === selectedTradeId)!} account={accounts.find(a => a.id === trades.find(t => t.id === selectedTradeId)?.accountId)} onClose={() => setIsViewModalOpen(false)} onEdit={() => { setIsViewModalOpen(false); setSubView('detail'); }} onDelete={() => handleRequestDelete([selectedTradeId!])} onSave={handleSaveTrade} tagGroups={tagGroups} onUpdateBalance={handleUpdateBalance} />}
       {isAddAccountModalOpen && <AddAccountModal onSave={handleAddAccount} onClose={() => setIsAddAccountModalOpen(false)} />}
-      {accountToDelete && <DeleteAccountModal accountToDelete={accountToDelete} otherAccounts={accounts.filter(a => a.id !== accountToDelete.id)} onConfirm={handleDeleteAccount} onClose={() => setAccountToDelete(null)} />}
-      
+      {isUserModalOpen && <UserModal user={user} onSave={handleUserUpdate} onClose={() => setIsUserModalOpen(false)} />}
+      <DeleteConfirmationModal isOpen={isDeleteModalOpen} count={tradesToDelete.length} onConfirm={executeDelete} onCancel={() => setIsDeleteModalOpen(false)} />
+      {accountToDelete && <DeleteAccountModal accountToDelete={accountToDelete} otherAccounts={accounts.filter(a => a.id !== accountToDelete.id)} onClose={() => setAccountToDelete(null)} onConfirm={handleExecuteDeleteAccount} />}
     </Layout>
   );
 }

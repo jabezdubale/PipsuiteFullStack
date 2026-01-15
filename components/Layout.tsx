@@ -28,10 +28,6 @@ interface LayoutProps {
   selectedAccountId: string;
   setSelectedAccountId: (id: string) => void;
   onAddTradeClick: () => void;
-  startDate: string;
-  setStartDate: (date: string) => void;
-  endDate: string;
-  setEndDate: (date: string) => void;
   toggleTheme: () => void;
   isDarkMode: boolean;
   onUpdateBalance: (amount: number, type: 'deposit' | 'withdraw') => void;
@@ -48,10 +44,6 @@ const Layout: React.FC<LayoutProps> = ({
   selectedAccountId, 
   setSelectedAccountId,
   onAddTradeClick,
-  startDate,
-  setStartDate,
-  endDate,
-  setEndDate,
   toggleTheme,
   isDarkMode,
   onUpdateBalance,

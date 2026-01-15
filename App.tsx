@@ -36,10 +36,6 @@ function App() {
   // Selection State
   const [selectedAccountId, setSelectedAccountId] = useState<string>('');
 
-  // Filter State
-  const [startDate, setStartDate] = useState(new Date(new Date().getFullYear(), 0, 1).toISOString().split('T')[0]);
-  const [endDate, setEndDate] = useState(new Date().toISOString().split('T')[0]);
-
   // Calendar State
   const [currentCalendarMonth, setCurrentCalendarMonth] = useState(new Date());
   // Daily View State
@@ -50,8 +46,8 @@ function App() {
   const [isNotesOpen, setIsNotesOpen] = useState(false);
   const [isAddAccountModalOpen, setIsAddAccountModalOpen] = useState(false);
   const [isViewModalOpen, setIsViewModalOpen] = useState(false);
-  const [isUserModalOpen, setIsUserModalOpen] = useState(false); // Added for User Management
-  const [editingUser, setEditingUser] = useState<User | null>(null); // Added for User Management
+  const [isUserModalOpen, setIsUserModalOpen] = useState(false); 
+  const [editingUser, setEditingUser] = useState<User | null>(null); 
 
   // Delete Confirmation State
   const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
@@ -374,24 +370,18 @@ function App() {
     }
   }, [isDarkMode]);
 
-  // Trades Filtering
+  // Trades Filtering - Global Date Filter Removed
   const filteredTrades = useMemo(() => {
     return trades.filter(t => {
       // Exclude deleted trades from main view
       if (t.isDeleted) return false;
-
-      // Use Entry Time (entryDate) as primary date, fallback to Log Time
-      const tDate = new Date(t.entryDate || t.createdAt);
-      const start = new Date(startDate);
-      const end = new Date(endDate);
-      end.setHours(23, 59, 59, 999);
       
-      const dateMatch = tDate >= start && tDate <= end;
+      // Filter only by Account
       const accountMatch = t.accountId === selectedAccountId;
       
-      return dateMatch && accountMatch;
+      return accountMatch;
     });
-  }, [trades, startDate, endDate, selectedAccountId]);
+  }, [trades, selectedAccountId]);
 
   const trashTrades = useMemo(() => {
       return trades.filter(t => t.isDeleted && t.accountId === selectedAccountId);
@@ -453,23 +443,6 @@ function App() {
       try {
           const updatedTrades = await saveTrades(newTrades);
           setTrades(updatedTrades);
-          
-          // Auto-expand Date Range if needed
-          if (newTrades.length > 0) {
-              const timestamps = newTrades.map(t => new Date(t.entryDate || t.createdAt).getTime()).filter(t => !isNaN(t));
-              if (timestamps.length > 0) {
-                  const minTime = Math.min(...timestamps);
-                  const maxTime = Math.max(...timestamps);
-                  
-                  const minDate = new Date(minTime).toISOString().split('T')[0];
-                  const maxDate = new Date(maxTime).toISOString().split('T')[0];
-                  
-                  // Only expand, don't shrink if current view is wider
-                  if (minDate < startDate) setStartDate(minDate);
-                  if (maxDate > endDate) setEndDate(maxDate);
-              }
-          }
-
           alert(`Successfully imported ${newTrades.length} trades.`);
       } catch (e) {
           alert("Failed to import trades.");
@@ -1044,7 +1017,7 @@ function App() {
           <div className="p-8 max-w-2xl mx-auto space-y-8 animate-in fade-in duration-500">
             <h2 className="text-xl font-bold">Settings</h2>
             
-            {/* User Management Section (Restored Functionality) */}
+            {/* User Management Section */}
             <div className="bg-surface border border-border rounded-xl p-6 shadow-sm space-y-6">
                <div className="flex justify-between items-center pb-2 border-b border-border/50">
                   <h3 className="font-semibold flex items-center gap-2">
@@ -1157,10 +1130,6 @@ function App() {
       selectedAccountId={selectedAccountId}
       setSelectedAccountId={handleAccountChange}
       onAddTradeClick={() => setIsAddModalOpen(true)}
-      startDate={startDate}
-      setStartDate={setStartDate}
-      endDate={endDate}
-      setEndDate={setEndDate}
       toggleTheme={() => setIsDarkMode(!isDarkMode)}
       isDarkMode={isDarkMode}
       onUpdateBalance={handleUpdateBalance}

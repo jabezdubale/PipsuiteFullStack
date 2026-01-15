@@ -767,18 +767,95 @@ const TradeList: React.FC<TradeListProps> = ({ trades, selectedAccountId, onTrad
         </div>
         <div className="flex gap-2 w-full sm:w-auto items-center">
           {/* Actions logic (Select, Import, Export, Columns) */}
-          <div className="flex gap-2 mr-auto sm:mr-0 order-2 sm:order-1">
-             <button onClick={() => setIsSelectionMode(!isSelectionMode)} className="bg-surface border border-border px-3 py-2 rounded-lg text-textMuted hover:text-primary flex items-center gap-2 text-xs transition-colors">
-                 <MousePointer2 size={14} /> Select
-             </button>
-             {onImportTrades && !isTrash && (
-                 <>
-                    <input type="file" ref={fileInputRef} className="hidden" accept=".csv" onChange={handleImportCSV} />
-                    <button onClick={() => fileInputRef.current?.click()} className="bg-surface border border-border px-3 py-2 rounded-lg text-textMuted hover:text-textMain flex items-center gap-2 text-xs transition-colors"><Upload size={14} /> Import</button>
-                 </>
-             )}
-             {!isTrash && <button onClick={handleExportCSV} className="bg-surface border border-border px-3 py-2 rounded-lg text-textMuted hover:text-textMain flex items-center gap-2 text-xs transition-colors"><Download size={14} /> Export</button>}
-          </div>
+          {isSelectionMode ? (
+              <div className="flex items-center gap-2 bg-surfaceHighlight/50 p-1 rounded-lg border border-primary/30 animate-in fade-in slide-in-from-right-2">
+                 <button 
+                    onClick={toggleSelectAllPage}
+                    className="px-3 py-1.5 text-xs font-medium text-textMain hover:bg-surface rounded transition-colors flex items-center gap-1.5"
+                 >
+                     <CheckSquare size={14} /> Select All
+                 </button>
+                 <div className="h-4 w-px bg-border/50"></div>
+                 
+                 {isTrash && (
+                     <button 
+                        onClick={handleBulkRestore}
+                        className="px-3 py-1.5 text-xs font-medium text-profit hover:bg-profit/10 rounded transition-colors flex items-center gap-1.5"
+                        disabled={selectedIds.size === 0}
+                     >
+                         <RotateCcw size={14} /> Restore ({selectedIds.size})
+                     </button>
+                 )}
+
+                 <button 
+                     onClick={handleBulkDelete}
+                     className="px-3 py-1.5 text-xs font-medium text-loss hover:bg-loss/10 rounded transition-colors flex items-center gap-1.5"
+                     disabled={selectedIds.size === 0}
+                 >
+                     <Trash2 size={14} /> {isTrash ? 'Delete Forever' : 'Delete'} ({selectedIds.size})
+                 </button>
+                 
+                 {!isTrash && (
+                    <>
+                        <div className="h-4 w-px bg-border/50"></div>
+                        <button 
+                            onClick={handleExportCSV}
+                            className="px-3 py-1.5 text-xs font-medium text-textMuted hover:text-textMain hover:bg-surface rounded transition-colors flex items-center gap-1.5"
+                            disabled={selectedIds.size === 0}
+                        >
+                            <Download size={14} /> Export ({selectedIds.size})
+                        </button>
+                    </>
+                 )}
+                 
+                 <div className="h-4 w-px bg-border/50"></div>
+                 <button 
+                    onClick={() => setIsSelectionMode(false)}
+                    className="p-1.5 text-textMuted hover:text-textMain hover:bg-surface rounded transition-colors"
+                    title="Exit Selection Mode"
+                 >
+                    <X size={14} />
+                 </button>
+              </div>
+          ) : (
+              // Standard Actions
+              <div className="flex gap-2 mr-auto sm:mr-0 order-2 sm:order-1">
+                <button 
+                    onClick={() => setIsSelectionMode(true)}
+                    className="bg-surface border border-border px-3 py-2 rounded-lg text-textMuted hover:text-primary flex items-center gap-2 text-xs transition-colors"
+                    title="Select Rows"
+                >
+                    <MousePointer2 size={14} /> <span className="hidden lg:inline">Select</span>
+                </button>
+                {onImportTrades && !isTrash && (
+                    <>
+                        <input 
+                            type="file" 
+                            ref={fileInputRef} 
+                            className="hidden" 
+                            accept=".csv"
+                            onChange={handleImportCSV}
+                        />
+                        <button 
+                            onClick={() => fileInputRef.current?.click()}
+                            className="bg-surface border border-border px-3 py-2 rounded-lg text-textMuted hover:text-textMain flex items-center gap-2 text-xs transition-colors"
+                            title="Import CSV"
+                        >
+                            <Upload size={14} /> <span className="hidden lg:inline">Import</span>
+                        </button>
+                    </>
+                )}
+                {!isTrash && (
+                    <button 
+                        onClick={handleExportCSV}
+                        className="bg-surface border border-border px-3 py-2 rounded-lg text-textMuted hover:text-textMain flex items-center gap-2 text-xs transition-colors"
+                        title="Export All Columns"
+                    >
+                        <Download size={14} /> <span className="hidden lg:inline">Export</span>
+                    </button>
+                )}
+              </div>
+          )}
           <button onClick={() => setIsColumnModalOpen(true)} className="bg-surface border border-border px-3 py-2 rounded-lg text-textMuted hover:text-textMain flex items-center gap-2 text-xs order-3"><Settings size={14} /> Columns</button>
         </div>
       </div>

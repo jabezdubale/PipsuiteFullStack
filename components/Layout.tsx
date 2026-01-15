@@ -154,8 +154,8 @@ const Layout: React.FC<LayoutProps> = ({
 
       {/* Main Content */}
       <div className="flex-1 flex flex-col h-full overflow-hidden relative">
-        {/* Header (Mobile & Desktop Filters) */}
-        <header className="h-14 border-b border-border bg-surface flex items-center justify-between px-4 md:px-6 z-20 shrink-0">
+        {/* Header (Mobile & Desktop Filters) - Changed z-20 to z-[100] to sit above TradeList sticky headers */}
+        <header className="h-14 border-b border-border bg-surface flex items-center justify-between px-4 md:px-6 z-[100] shrink-0">
           <div className="flex items-center gap-2 md:hidden">
             <div className="w-8 h-8 bg-primary rounded-lg flex items-center justify-center">
               <CandlestickChart className="text-white" size={20} />

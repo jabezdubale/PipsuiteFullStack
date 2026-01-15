@@ -16,7 +16,7 @@ import { getTrades, saveTrade, deleteTrades, getAccounts, saveAccount, deleteAcc
 import { fetchCurrentPrice, PriceResult } from './services/priceService';
 import { extractTradeParamsFromImage } from './services/geminiService';
 import { Trade, TradeStats, Account, TradeType, TradeStatus, ASSETS, TagGroup, OrderType, Session, TradeOutcome, User } from './types';
-import { X, ChevronDown, Calculator, TrendingUp, TrendingDown, RefreshCw, Loader2, Upload, Plus, Trash2, Clipboard, ChevronUp, Eraser, Check, User as UserIcon } from 'lucide-react';
+import { X, ChevronDown, Calculator, TrendingUp, TrendingDown, RefreshCw, Loader2, Upload, Plus, Trash2, Clipboard, ChevronUp, Eraser, User as UserIcon } from 'lucide-react';
 import UserModal from './components/UserModal';
 
 function App() {
@@ -36,16 +36,9 @@ function App() {
   // Selection State
   const [selectedAccountId, setSelectedAccountId] = useState<string>('');
 
-  // Filter State - Default to Current Month
-  const [startDate, setStartDate] = useState(() => {
-      const now = new Date();
-      return new Date(now.getFullYear(), now.getMonth(), 1).toISOString().split('T')[0];
-  });
-
-  const [endDate, setEndDate] = useState(() => {
-      const now = new Date();
-      return new Date(now.getFullYear(), now.getMonth() + 1, 0).toISOString().split('T')[0];
-  });
+  // Filter State
+  const [startDate, setStartDate] = useState(new Date(new Date().getFullYear(), 0, 1).toISOString().split('T')[0]);
+  const [endDate, setEndDate] = useState(new Date().toISOString().split('T')[0]);
 
   // Calendar State
   const [currentCalendarMonth, setCurrentCalendarMonth] = useState(new Date());
@@ -57,8 +50,8 @@ function App() {
   const [isNotesOpen, setIsNotesOpen] = useState(false);
   const [isAddAccountModalOpen, setIsAddAccountModalOpen] = useState(false);
   const [isViewModalOpen, setIsViewModalOpen] = useState(false);
-  const [isUserModalOpen, setIsUserModalOpen] = useState(false);
-  const [editingUser, setEditingUser] = useState<User | null>(null); // For UserModal
+  const [isUserModalOpen, setIsUserModalOpen] = useState(false); // Added for User Management
+  const [editingUser, setEditingUser] = useState<User | null>(null); // Added for User Management
 
   // Delete Confirmation State
   const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
@@ -66,11 +59,8 @@ function App() {
   const [accountToDelete, setAccountToDelete] = useState<Account | null>(null);
 
   // Theme State
-  const [isDarkMode, setIsDarkMode] = useState(() => {
-      const savedTheme = localStorage.getItem('pipsuite_theme');
-      return savedTheme ? savedTheme === 'dark' : true; 
-  });
-  
+  const [isDarkMode, setIsDarkMode] = useState(true);
+
   // Price Fetching State
   const [isFetchingPrice, setIsFetchingPrice] = useState(false);
   const [priceSource, setPriceSource] = useState<PriceResult | null>(null);
@@ -84,51 +74,52 @@ function App() {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const analysisFileInputRef = useRef<HTMLInputElement>(null);
 
-  // Initial Load
+  // Initial Data Load
   useEffect(() => {
-    const initApp = async () => {
-        setIsLoading(true);
-        try {
-            // 1. Fetch Users
-            const loadedUsers = await getUsers();
-            setUsers(loadedUsers);
+    const loadData = async () => {
+      setIsLoading(true);
+      try {
+        // Load Users first
+        const loadedUsers = await getUsers();
+        setUsers(loadedUsers);
 
-            // 2. Determine Current User
-            let userToSelect = loadedUsers[0]; // Default fallback
-            const savedUserId = localStorage.getItem('pipsuite_current_user_id');
-            if (savedUserId) {
-                const found = loadedUsers.find(u => u.id === savedUserId);
-                if (found) userToSelect = found;
-            }
-            
-            if (userToSelect) {
-                await handleSwitchUser(userToSelect.id, loadedUsers);
-            }
-
-            // 3. Global Settings
-            const [datePref, activeTabPref] = await Promise.all([
-                getSetting<{start: string, end: string} | null>('pipsuite_date_range', null),
-                getSetting<string>('pipsuite_active_tab', 'dashboard')
-            ]);
-
-            if (datePref) {
-                setStartDate(datePref.start);
-                setEndDate(datePref.end);
-            }
-            if (activeTabPref) {
-                setActiveTab(activeTabPref);
-            }
-
-        } catch (e) {
-            console.error("Initialization Failed", e);
-        } finally {
-            setIsLoading(false);
+        // Determine Current User
+        let userToSelect = loadedUsers[0]; 
+        const savedUserId = localStorage.getItem('pipsuite_current_user_id');
+        if (savedUserId) {
+            const found = loadedUsers.find(u => u.id === savedUserId);
+            if (found) userToSelect = found;
         }
+        
+        if (userToSelect) {
+            await handleSwitchUser(userToSelect.id, loadedUsers);
+        } else {
+            // Fallback load if no users (legacy mode)
+            const [loadedAccounts, loadedTrades, loadedTags, loadedStrategies] = await Promise.all([
+              getAccounts(),
+              getTrades(),
+              getTagGroups(),
+              getStrategies()
+            ]);
+            setAccounts(loadedAccounts);
+            setTrades(loadedTrades);
+            setTagGroups(loadedTags);
+            setStrategies(loadedStrategies);
+            if (loadedAccounts.length > 0 && !selectedAccountId) {
+                setSelectedAccountId(loadedAccounts[0].id);
+            }
+        }
+
+      } catch (error) {
+        console.error("Failed to load data:", error);
+      } finally {
+        setIsLoading(false);
+      }
     };
-    initApp();
+
+    loadData();
   }, []);
 
-  // Handler to switch user and reload scoped data
   const handleSwitchUser = async (userId: string, userList = users) => {
       const newUser = userList.find(u => u.id === userId);
       if (!newUser) return;
@@ -144,8 +135,15 @@ function App() {
           getStrategies(userId)
       ]);
 
+      // Filter trades for this user's accounts
+      const userAccountIds = userAccounts.map(a => a.id);
+      const filteredTrades = userTrades.filter(t => userAccountIds.includes(t.accountId));
+
       setAccounts(userAccounts);
-      // Determine selected account
+      setTrades(filteredTrades);
+      setTagGroups(userTags);
+      setStrategies(userStrategies);
+
       if (userAccounts.length > 0) {
           const savedAccountId = localStorage.getItem(`pipsuite_selected_account_${userId}`);
           if (savedAccountId && userAccounts.some(a => a.id === savedAccountId)) {
@@ -155,18 +153,6 @@ function App() {
           }
       } else {
           setSelectedAccountId('');
-      }
-
-      setTrades(userTrades);
-      setTagGroups(userTags);
-      setStrategies(userStrategies);
-  };
-
-  // Persist selected account for current user
-  const handleAccountChange = (id: string) => {
-      setSelectedAccountId(id);
-      if (currentUser) {
-          localStorage.setItem(`pipsuite_selected_account_${currentUser.id}`, id);
       }
   };
 
@@ -179,7 +165,7 @@ function App() {
               twelveDataApiKey: userData.twelveDataApiKey!
           };
 
-          const savedUser = await saveUser(userToSave);
+          await saveUser(userToSave);
           const updatedUsers = await getUsers();
           setUsers(updatedUsers);
 
@@ -206,23 +192,31 @@ function App() {
   };
 
   const handleUserDelete = async (userId: string) => {
-      if (users.length <= 1) {
-          alert("You cannot delete the last user. The application requires at least one user.");
-          return;
-      }
-      
-      if (!window.confirm("Are you sure? This will delete the user and ALL associated accounts and trades.")) return;
-
+      if (!window.confirm("Are you sure you want to delete this user? All associated data will be lost.")) return;
       try {
           await deleteUser(userId);
           const updatedUsers = await getUsers();
           setUsers(updatedUsers);
-          
+          // If we deleted the current user
           if (currentUser?.id === userId) {
-              await handleSwitchUser(updatedUsers[0].id, updatedUsers);
+             if (updatedUsers.length > 0) {
+                 handleSwitchUser(updatedUsers[0].id, updatedUsers);
+             } else {
+                 setCurrentUser(null);
+                 setAccounts([]);
+                 setTrades([]);
+                 setSelectedAccountId('');
+             }
           }
       } catch (e) {
           alert("Failed to delete user.");
+      }
+  };
+
+  const handleAccountChange = (accountId: string) => {
+      setSelectedAccountId(accountId);
+      if (currentUser) {
+          localStorage.setItem(`pipsuite_selected_account_${currentUser.id}`, accountId);
       }
   };
 
@@ -239,7 +233,7 @@ function App() {
   // Paste Listener for Add Modal
   useEffect(() => {
     const handlePaste = (e: ClipboardEvent) => {
-      if (!isAddModalOpen) return; 
+      if (!isAddModalOpen) return; // Only listen when modal is open
 
       const items = e.clipboardData?.items;
       if (!items) return;
@@ -252,6 +246,7 @@ function App() {
             reader.onload = (event) => {
               const base64 = event.target?.result as string;
               if (base64) {
+                 // Add to screenshots
                  setNewTradeForm((prev: any) => ({
                     ...prev,
                     screenshots: [...(prev.screenshots || []), base64]
@@ -338,7 +333,6 @@ function App() {
           setPriceError("API Key Missing");
           return;
       }
-
       setIsFetchingPrice(true);
       setPriceSource(null);
       setPriceError(null);
@@ -380,27 +374,13 @@ function App() {
     }
   }, [isDarkMode]);
 
-  const handleDateRangeChange = (newStart: string, newEnd: string) => {
-      setStartDate(newStart);
-      setEndDate(newEnd);
-      saveSetting('pipsuite_date_range', { start: newStart, end: newEnd });
-  };
-
-  const handleTabChange = (tab: string) => {
-      setActiveTab(tab);
-      setSubView('list');
-      saveSetting('pipsuite_active_tab', tab);
-  };
-
   // Trades Filtering
   const filteredTrades = useMemo(() => {
     return trades.filter(t => {
+      // Exclude deleted trades from main view
       if (t.isDeleted) return false;
 
-      // Ensure trade belongs to an account owned by current user
-      const account = accounts.find(a => a.id === t.accountId);
-      if (!account || account.userId !== currentUser?.id) return false;
-
+      // Use Entry Time (entryDate) as primary date, fallback to Log Time
       const tDate = new Date(t.entryDate || t.createdAt);
       const start = new Date(startDate);
       const end = new Date(endDate);
@@ -411,26 +391,21 @@ function App() {
       
       return dateMatch && accountMatch;
     });
-  }, [trades, startDate, endDate, selectedAccountId, currentUser, accounts]);
+  }, [trades, startDate, endDate, selectedAccountId]);
 
   const trashTrades = useMemo(() => {
-      return trades.filter(t => {
-          const account = accounts.find(a => a.id === t.accountId);
-          return t.isDeleted && account?.userId === currentUser?.id && t.accountId === selectedAccountId;
-      });
-  }, [trades, selectedAccountId, currentUser, accounts]);
+      return trades.filter(t => t.isDeleted && t.accountId === selectedAccountId);
+  }, [trades, selectedAccountId]);
 
   const selectedDailyTrades = useMemo(() => {
       if (!selectedDailyDate) return [];
       return trades.filter(t => {
           if (t.isDeleted) return false;
-          const account = accounts.find(a => a.id === t.accountId);
-          if (!account || account.userId !== currentUser?.id) return false;
-
+          // Use Entry Time (entryDate) as primary date
           const tDate = new Date(t.entryDate || t.createdAt).toLocaleDateString('en-CA');
           return tDate === selectedDailyDate && t.accountId === selectedAccountId;
       });
-  }, [trades, selectedDailyDate, selectedAccountId, currentUser, accounts]);
+  }, [trades, selectedDailyDate, selectedAccountId]);
 
 
   // Stats
@@ -463,7 +438,7 @@ function App() {
   const handleSaveTrade = async (trade: Trade, shouldClose: boolean = true) => {
     try {
         const updatedTrades = await saveTrade(trade);
-        setTrades(updatedTrades); // Updates global trade list, filters handle visibility
+        setTrades(updatedTrades);
         
         if (shouldClose) {
             setSubView('list');
@@ -471,7 +446,6 @@ function App() {
         }
     } catch (e) {
         alert("Failed to save trade.");
-        throw e; // Rethrow to let caller know it failed
     }
   };
 
@@ -480,8 +454,20 @@ function App() {
           const updatedTrades = await saveTrades(newTrades);
           setTrades(updatedTrades);
           
+          // Auto-expand Date Range if needed
           if (newTrades.length > 0) {
-              // ... date range logic ...
+              const timestamps = newTrades.map(t => new Date(t.entryDate || t.createdAt).getTime()).filter(t => !isNaN(t));
+              if (timestamps.length > 0) {
+                  const minTime = Math.min(...timestamps);
+                  const maxTime = Math.max(...timestamps);
+                  
+                  const minDate = new Date(minTime).toISOString().split('T')[0];
+                  const maxDate = new Date(maxTime).toISOString().split('T')[0];
+                  
+                  // Only expand, don't shrink if current view is wider
+                  if (minDate < startDate) setStartDate(minDate);
+                  if (maxDate > endDate) setEndDate(maxDate);
+              }
           }
 
           alert(`Successfully imported ${newTrades.length} trades.`);
@@ -507,7 +493,6 @@ function App() {
               const updatedTrades = await deleteTrades(tradesToDelete);
               setTrades(updatedTrades);
           } else {
-              // Soft Delete logic
               const tradesToTrash = trades.filter(t => tradesToDelete.includes(t.id));
               
               const balanceAdjustments: Record<string, number> = {};
@@ -574,8 +559,6 @@ function App() {
   };
 
   const handleRestoreTrades = async (ids: string[]) => {
-      // ... restore logic ...
-      // Same logic as before but uses saveTrade which updates DB
       try {
           const tradesToRestore = trades.filter(t => ids.includes(t.id));
           const balanceAdjustments: Record<string, number> = {};
@@ -638,7 +621,7 @@ function App() {
       try {
         const updatedAccounts = await saveAccount(account);
         setAccounts(updatedAccounts);
-        handleAccountChange(account.id);
+        setSelectedAccountId(account.id);
       } catch (e) {
         alert("Failed to create account.");
       }
@@ -655,15 +638,14 @@ function App() {
           
           const newAccounts = accounts.filter(a => a.id !== accountToDelete.id);
           setAccounts(newAccounts);
-          // Trades removed automatically via cascade in DB, but update local state
           setTrades(prev => prev.filter(t => t.accountId !== accountToDelete.id));
           
           if (fallbackAccountId && newAccounts.find(a => a.id === fallbackAccountId)) {
-              handleAccountChange(fallbackAccountId);
+              setSelectedAccountId(fallbackAccountId);
           } else if (newAccounts.length > 0) {
-              handleAccountChange(newAccounts[0].id);
+              setSelectedAccountId(newAccounts[0].id);
           } else {
-              handleAccountChange('');
+              setSelectedAccountId('');
           }
           
           setAccountToDelete(null);
@@ -682,7 +664,7 @@ function App() {
           const updatedAccount = { ...account, balance: newBalance };
           try {
             const updatedAccounts = await saveAccount(updatedAccount);
-            setAccounts(updatedAccounts); // Backend returns filtered list for user
+            setAccounts(updatedAccounts);
           } catch(e) {
             alert("Failed to update balance.");
           }
@@ -712,17 +694,38 @@ function App() {
   const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file) {
-      if (file.size > 2 * 1024 * 1024) return alert("Image too large (Max 2MB)");
+      if (file.size > 2 * 1024 * 1024) {
+        alert("Image file is too large. Please upload an image smaller than 2MB.");
+        return;
+      }
       const reader = new FileReader();
       reader.onloadend = () => {
+        const base64String = reader.result as string;
         setNewTradeForm((prev: any) => ({
             ...prev,
-            screenshots: [...(prev.screenshots || []), reader.result as string]
+            screenshots: [...(prev.screenshots || []), base64String]
         }));
       };
       reader.readAsDataURL(file);
     }
   };
+
+  const handleAddImageFromUrl = () => {
+      if (newImageUrl) {
+          setNewTradeForm((prev: any) => ({
+              ...prev,
+              screenshots: [...(prev.screenshots || []), newImageUrl]
+          }));
+          setNewImageUrl('');
+      }
+  }
+
+  const handleRemoveImage = (index: number) => {
+      setNewTradeForm((prev: any) => ({
+          ...prev,
+          screenshots: prev.screenshots.filter((_: any, i: number) => i !== index)
+      }));
+  }
 
   const toggleTag = (tag: string) => {
     setNewTradeForm((prev: any) => {
@@ -735,67 +738,249 @@ function App() {
     });
   };
 
-  const handleLotSizeChange = (val: string) => {
-    setNewTradeForm((prev: any) => ({ ...prev, quantity: val }));
-  };
-  const handleRiskPctChange = (val: string) => {
-    setNewTradeForm((prev: any) => ({ ...prev, riskPercentage: val }));
-  };
-  const handleClearForm = () => {
-      setNewTradeForm({ symbol: 'XAUUSD', screenshots: [], tags: [], setup: '' });
-      setNewImageUrl('');
-  };
   const navigateToTrade = (trade: Trade) => {
     setSelectedTradeId(trade.id);
     setIsViewModalOpen(true); 
   };
+  
   const handleEditFromModal = () => {
       setIsViewModalOpen(false);
       setSubView('detail');
   };
-  const handleQuickAdd = async (e: React.FormEvent) => {
-      e.preventDefault();
-      
-      if (!selectedAccountId) {
-          alert("Please select an account first.");
-          return;
-      }
 
-      const entryPrice = parseFloat(newTradeForm.entryPrice);
-      
-      const newTrade: Trade = {
-          id: Date.now().toString(),
-          accountId: selectedAccountId,
-          symbol: (newTradeForm.symbol || 'XAUUSD').toUpperCase(),
-          type: TradeType.LONG, // Default to Long if missing
-          entryDate: new Date().toISOString(),
-          entryPrice: entryPrice,
-          quantity: parseFloat(newTradeForm.quantity),
-          fees: 0,
-          pnl: 0,
-          status: TradeStatus.OPEN,
-          outcome: TradeOutcome.OPEN,
-          screenshots: newTradeForm.screenshots || [],
-          tags: newTradeForm.tags || [],
-          isDeleted: false,
-          setup: newTradeForm.setup || '',
-          notes: newTradeForm.notes || ''
-      };
+  const handleQuickAdd = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!newTradeForm.symbol || !newTradeForm.entryPrice) return;
 
-      try {
-          // Await the save process. If it fails, catch block triggers and form is NOT cleared.
-          await handleSaveTrade(newTrade, false); 
-          handleClearForm(); // Only clear if successful
-          setIsAddModalOpen(false); // Close modal on success
-      } catch (err) {
-          // Error already alerted in handleSaveTrade, form remains dirty for retry
+    const entryPrice = parseFloat(newTradeForm.entryPrice);
+    const takeProfit = newTradeForm.takeProfit ? parseFloat(newTradeForm.takeProfit) : undefined;
+    
+    let determinedType = TradeType.LONG;
+    if (takeProfit && entryPrice) {
+      if (takeProfit < entryPrice) {
+        determinedType = TradeType.SHORT;
       }
+    } else if (newTradeForm.stopLoss && entryPrice) {
+       if (parseFloat(newTradeForm.stopLoss) > entryPrice) {
+           determinedType = TradeType.SHORT;
+       }
+    }
+
+    let determinedOrderType = OrderType.MARKET;
+    if (tradeCalculations?.orderType) {
+         if (tradeCalculations.orderType.includes('Limit')) {
+             determinedOrderType = tradeCalculations.orderType.includes('Buy') ? OrderType.BUY_LIMIT : OrderType.SELL_LIMIT;
+         } else if (tradeCalculations.orderType.includes('Stop')) {
+             determinedOrderType = tradeCalculations.orderType.includes('Buy') ? OrderType.BUY_STOP : OrderType.SELL_STOP;
+         }
+    }
+
+    const now = new Date();
+    const isoString = now.toISOString();
+
+    const newTrade: Trade = {
+      id: Date.now().toString(),
+      accountId: selectedAccountId,
+      symbol: (newTradeForm.symbol || 'XAUUSD').toUpperCase(),
+      type: determinedType,
+      createdAt: isoString, 
+      entryDate: isoString, 
+      entryTime: undefined, 
+      entrySession: Session.NONE, 
+      entryPrice: entryPrice,
+      takeProfit: takeProfit,
+      stopLoss: newTradeForm.stopLoss ? parseFloat(newTradeForm.stopLoss) : undefined,
+      leverage: newTradeForm.leverage ? parseFloat(newTradeForm.leverage) : undefined,
+      quantity: parseFloat(newTradeForm.quantity || 0),
+      riskPercentage: newTradeForm.riskPercentage ? parseFloat(newTradeForm.riskPercentage) : undefined,
+      fees: 0,
+      balance: newTradeForm.balance ? parseFloat(newTradeForm.balance) : undefined,
+      orderType: determinedOrderType,
+      setup: 'SMC', 
+      notes: newTradeForm.notes || '',
+      emotionalNotes: newTradeForm.emotionalNotes || '',
+      pnl: 0,
+      status: TradeStatus.OPEN,
+      outcome: TradeOutcome.OPEN,
+      screenshots: newTradeForm.screenshots || [],
+      tags: newTradeForm.tags || [],
+      isDeleted: false
+    };
+
+    handleSaveTrade(newTrade);
+    setNewTradeForm({ symbol: 'XAUUSD', screenshots: [], tags: [], setup: '' });
   };
-  
-  const toggleTheme = () => {
-      const newTheme = !isDarkMode ? 'dark' : 'light';
-      setIsDarkMode(!isDarkMode);
-      localStorage.setItem('pipsuite_theme', newTheme);
+
+  const handleClearForm = () => {
+    setNewTradeForm((prev: any) => ({
+      symbol: prev.symbol,
+      currentPrice: prev.currentPrice,
+      balance: prev.balance,
+      entryPrice: '',
+      takeProfit: '',
+      stopLoss: '',
+      leverage: '',
+      quantity: '',
+      riskPercentage: '',
+      setup: '',
+      notes: '',
+      emotionalNotes: '',
+      screenshots: [],
+      tags: []
+    }));
+    setNewImageUrl('');
+  };
+
+  const canCalculateRisk = useMemo(() => {
+    return !!(
+      newTradeForm.symbol &&
+      newTradeForm.entryPrice &&
+      newTradeForm.stopLoss &&
+      newTradeForm.balance &&
+      parseFloat(newTradeForm.entryPrice) !== parseFloat(newTradeForm.stopLoss)
+    );
+  }, [newTradeForm.symbol, newTradeForm.entryPrice, newTradeForm.stopLoss, newTradeForm.balance]);
+
+  const isFormComplete = useMemo(() => {
+    const { symbol, entryPrice, takeProfit, stopLoss, leverage, balance, quantity, riskPercentage } = newTradeForm;
+    return !!(
+        symbol && 
+        entryPrice && 
+        takeProfit && 
+        stopLoss && 
+        leverage && 
+        balance && 
+        quantity && 
+        riskPercentage
+    );
+  }, [newTradeForm]);
+
+  const tradeCalculations = useMemo(() => {
+    const { symbol, entryPrice, currentPrice, takeProfit, stopLoss, quantity, leverage, balance, riskPercentage } = newTradeForm;
+    
+    if (!symbol || !entryPrice) return null;
+
+    const asset = ASSETS.find(a => a.assetPair === symbol);
+    if (!asset) return null;
+
+    const entry = parseFloat(entryPrice);
+    const current = parseFloat(currentPrice);
+    const tp = parseFloat(takeProfit);
+    const sl = parseFloat(stopLoss);
+    const lots = parseFloat(quantity);
+    const lev = parseFloat(leverage) || 1;
+
+    let direction = 'LONG';
+    if (!isNaN(tp)) {
+        direction = tp > entry ? 'LONG' : 'SHORT';
+    } else if (!isNaN(sl)) {
+        direction = sl < entry ? 'LONG' : 'SHORT';
+    }
+
+    let orderType = '-';
+    if (!isNaN(current) && !isNaN(entry)) {
+        if (direction === 'LONG') {
+             if (entry < current) orderType = 'Buy Limit';
+             else if (entry > current) orderType = 'Buy Stop';
+             else orderType = 'Market Buy';
+        } else {
+             if (entry > current) orderType = 'Sell Limit';
+             else if (entry < current) orderType = 'Sell Stop';
+             else orderType = 'Market Sell';
+        }
+    }
+
+    const contractSize = asset.contractSize;
+    
+    const calculateDistances = (target: number) => {
+        if (isNaN(target)) return { points: 0, pips: 0, ticks: 0 };
+        const dist = Math.abs(target - entry);
+        return {
+            points: dist,
+            pips: dist / asset.pip,
+            ticks: dist / asset.tick
+        };
+    };
+
+    const tpCalc = calculateDistances(tp);
+    const slCalc = calculateDistances(sl);
+
+    let riskAmount = 0;
+    let potentialProfit = 0;
+    
+    if (!isNaN(lots)) {
+        if (!isNaN(sl)) {
+            riskAmount = slCalc.points * contractSize * lots;
+        }
+        if (!isNaN(tp)) {
+            potentialProfit = tpCalc.points * contractSize * lots;
+        }
+    }
+
+    let displayRisk = riskAmount;
+    if (balance && riskPercentage) {
+        const bal = parseFloat(balance);
+        const rp = parseFloat(riskPercentage);
+        if (!isNaN(bal) && !isNaN(rp)) {
+             const theoreticalRisk = bal * (rp / 100);
+             if (riskAmount > 0 && Math.abs(riskAmount - theoreticalRisk) < (theoreticalRisk * 0.05)) {
+                 displayRisk = theoreticalRisk;
+             }
+        }
+    }
+
+    let rr = 0;
+    if (displayRisk > 0) {
+        rr = potentialProfit / displayRisk;
+    }
+
+    let requiredMargin = 0;
+    if (!isNaN(lots) && !isNaN(entry)) {
+        requiredMargin = (entry * contractSize * lots) / lev;
+    }
+
+    return {
+        direction,
+        orderType,
+        tpCalc,
+        slCalc,
+        riskAmount: displayRisk,
+        potentialProfit,
+        rr,
+        requiredMargin
+    };
+  }, [newTradeForm]);
+
+  const handleLotSizeChange = (val: string) => {
+    setNewTradeForm(prev => ({ ...prev, quantity: val }));
+    if (!canCalculateRisk || !newTradeForm.symbol || !val) return;
+    const lots = parseFloat(val);
+    if (isNaN(lots)) return;
+    const asset = ASSETS.find(a => a.assetPair === newTradeForm.symbol);
+    if (!asset) return;
+    const entry = parseFloat(newTradeForm.entryPrice);
+    const sl = parseFloat(newTradeForm.stopLoss);
+    const balance = parseFloat(newTradeForm.balance);
+    const priceDiff = Math.abs(entry - sl);
+    const riskAmount = priceDiff * asset.contractSize * lots;
+    const riskPct = (riskAmount / balance) * 100;
+    setNewTradeForm(prev => ({ ...prev, quantity: val, riskPercentage: riskPct.toFixed(3) }));
+  };
+
+  const handleRiskPctChange = (val: string) => {
+    setNewTradeForm(prev => ({ ...prev, riskPercentage: val }));
+    if (!canCalculateRisk || !newTradeForm.symbol || !val) return;
+    const riskPct = parseFloat(val);
+    if (isNaN(riskPct)) return;
+    const asset = ASSETS.find(a => a.assetPair === newTradeForm.symbol);
+    if (!asset) return;
+    const entry = parseFloat(newTradeForm.entryPrice);
+    const sl = parseFloat(newTradeForm.stopLoss);
+    const balance = parseFloat(newTradeForm.balance);
+    const riskAmount = balance * (riskPct / 100);
+    const priceDiff = Math.abs(entry - sl);
+    const lots = riskAmount / (priceDiff * asset.contractSize);
+    setNewTradeForm(prev => ({ ...prev, riskPercentage: val, quantity: lots.toFixed(4) }));
   };
 
   const renderContent = () => {
@@ -856,12 +1041,10 @@ function App() {
         );
       case 'settings':
         return (
-          <div className="p-8 max-w-3xl mx-auto space-y-8 animate-in fade-in duration-500">
-            <div className="flex justify-between items-center">
-                <h2 className="text-xl font-bold">Settings</h2>
-            </div>
+          <div className="p-8 max-w-2xl mx-auto space-y-8 animate-in fade-in duration-500">
+            <h2 className="text-xl font-bold">Settings</h2>
             
-            {/* User Management Section */}
+            {/* User Management Section (Restored Functionality) */}
             <div className="bg-surface border border-border rounded-xl p-6 shadow-sm space-y-6">
                <div className="flex justify-between items-center pb-2 border-b border-border/50">
                   <h3 className="font-semibold flex items-center gap-2">
@@ -874,7 +1057,6 @@ function App() {
                       <Plus size={14} /> Add User
                   </button>
                </div>
-               
                <div className="space-y-2">
                    {users.map(u => {
                        const isCurrent = currentUser?.id === u.id;
@@ -888,38 +1070,12 @@ function App() {
                                        <p className={`text-sm font-medium ${isCurrent ? 'text-primary' : 'text-textMain'}`}>
                                            {u.name} {isCurrent && <span className="text-[10px] bg-primary/10 px-1.5 py-0.5 rounded ml-2">Active</span>}
                                        </p>
-                                       <div className="flex gap-3 text-[10px] text-textMuted mt-0.5">
-                                           <span>Gemini: {u.geminiApiKey ? '••••' : 'Missing'}</span>
-                                           <span>12Data: {u.twelveDataApiKey ? '••••' : 'Missing'}</span>
-                                       </div>
                                    </div>
                                </div>
-                               
                                <div className="flex items-center gap-2">
-                                   {!isCurrent && (
-                                       <button 
-                                            onClick={() => handleSwitchUser(u.id, users)}
-                                            className="p-1.5 text-textMuted hover:text-primary hover:bg-primary/10 rounded transition-colors text-xs font-medium"
-                                       >
-                                           Select
-                                       </button>
-                                   )}
-                                   <button 
-                                        onClick={() => { setEditingUser(u); setIsUserModalOpen(true); }}
-                                        className="p-1.5 text-textMuted hover:text-textMain hover:bg-surfaceHighlight rounded transition-colors"
-                                        title="Edit User"
-                                   >
-                                       <Eraser size={14} />
-                                   </button>
-                                   {!isCurrent && (
-                                       <button 
-                                            onClick={() => handleUserDelete(u.id)}
-                                            className="p-1.5 text-textMuted hover:text-loss hover:bg-loss/10 rounded transition-colors"
-                                            title="Delete User"
-                                       >
-                                           <Trash2 size={14} />
-                                       </button>
-                                   )}
+                                   {!isCurrent && <button onClick={() => handleSwitchUser(u.id, users)} className="p-1.5 text-textMuted hover:text-primary hover:bg-primary/10 rounded transition-colors text-xs font-medium">Select</button>}
+                                   <button onClick={() => { setEditingUser(u); setIsUserModalOpen(true); }} className="p-1.5 text-textMuted hover:text-textMain hover:bg-surfaceHighlight rounded transition-colors"><Eraser size={14} /></button>
+                                   {!isCurrent && <button onClick={() => handleUserDelete(u.id)} className="p-1.5 text-textMuted hover:text-loss hover:bg-loss/10 rounded transition-colors"><Trash2 size={14} /></button>}
                                </div>
                            </div>
                        );
@@ -968,6 +1124,11 @@ function App() {
             <StrategyManager strategies={strategies} onUpdate={handleUpdateStrategies} />
             
             <TagManager groups={tagGroups} onUpdate={handleUpdateTags} />
+
+            <div className="bg-surface border border-border rounded-xl p-6 shadow-sm opacity-80 hover:opacity-100 transition-opacity mt-8">
+                <h3 className="font-semibold mb-4 text-primary">Data Storage</h3>
+                <p className="text-sm text-textMuted">Data is saved locally in your browser (LocalStorage). Clearing browser cache will delete your data.</p>
+            </div>
           </div>
         );
       default:
@@ -982,7 +1143,7 @@ function App() {
           <div className="h-screen flex items-center justify-center bg-background text-textMain">
               <div className="flex flex-col items-center gap-4">
                   <Loader2 className="animate-spin text-primary" size={48} />
-                  <p className="text-textMuted font-medium">Loading...</p>
+                  <p className="text-textMuted font-medium">Loading Journal...</p>
               </div>
           </div>
       )
@@ -991,23 +1152,21 @@ function App() {
   return (
     <Layout 
       activeTab={activeTab} 
-      setActiveTab={handleTabChange}
+      setActiveTab={(tab) => { setActiveTab(tab); setSubView('list'); }}
       accounts={accounts} 
       selectedAccountId={selectedAccountId}
       setSelectedAccountId={handleAccountChange}
       onAddTradeClick={() => setIsAddModalOpen(true)}
       startDate={startDate}
-      setStartDate={(d) => handleDateRangeChange(d, endDate)}
+      setStartDate={setStartDate}
       endDate={endDate}
-      setEndDate={(d) => handleDateRangeChange(startDate, d)}
-      toggleTheme={toggleTheme}
+      setEndDate={setEndDate}
+      toggleTheme={() => setIsDarkMode(!isDarkMode)}
       isDarkMode={isDarkMode}
       onUpdateBalance={handleUpdateBalance}
       users={users}
       currentUser={currentUser}
       onSwitchUser={(id) => handleSwitchUser(id, users)}
-      onCreateUser={() => { setEditingUser(null); setIsUserModalOpen(true); }}
-      onDeleteUser={handleUserDelete}
     >
       {renderContent()}
 
@@ -1066,7 +1225,6 @@ function App() {
           />
       )}
 
-      {/* Add Trade Modal (Restored from previous version) */}
       {isAddModalOpen && (
         <div 
             className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 p-4 backdrop-blur-sm animate-in fade-in"
@@ -1076,7 +1234,7 @@ function App() {
             className="bg-surface border border-border rounded-xl w-full max-w-lg shadow-2xl flex flex-col max-h-[90vh]"
             onClick={(e) => e.stopPropagation()}
           >
-             <div className="p-5 border-b border-border flex justify-between items-center shrink-0">
+            <div className="p-5 border-b border-border flex justify-between items-center shrink-0">
               <h3 className="text-lg font-bold">Add Trade</h3>
               <div className="flex items-center gap-3">
                  <button onClick={() => setIsAddModalOpen(false)} className="text-textMuted hover:text-textMain"><X size={20} /></button>
@@ -1208,57 +1366,151 @@ function App() {
 
                   <div className="grid grid-cols-2 gap-4">
                     <div>
-                        <label className="block text-xs font-medium mb-1">Lot Size</label>
+                        <label className={`block text-xs font-medium mb-1 ${!canCalculateRisk ? 'text-textMuted/50' : 'text-textMuted'}`}>Lot Size</label>
                         <input 
                           type="number" 
                           step="any" 
                           value={newTradeForm.quantity || ''}
                           onChange={(e) => handleLotSizeChange(e.target.value)} 
-                          className="w-full bg-background border border-border rounded p-2 text-sm text-textMain"
+                          className={`w-full bg-background border border-border rounded p-2 text-sm text-textMain ${!canCalculateRisk ? 'opacity-50 cursor-not-allowed' : ''}`}
+                          disabled={!canCalculateRisk}
                           required 
                         />
                     </div>
                     <div>
-                        <label className="block text-xs font-medium mb-1">Risk %</label>
+                        <label className={`block text-xs font-medium mb-1 ${!canCalculateRisk ? 'text-textMuted/50' : 'text-textMuted'}`}>Risk %</label>
                         <input 
                           type="number" 
                           step="any" 
                           value={newTradeForm.riskPercentage || ''}
                           onChange={(e) => handleRiskPctChange(e.target.value)} 
-                          className="w-full bg-background border border-border rounded p-2 text-sm text-textMain"
+                          className={`w-full bg-background border border-border rounded p-2 text-sm text-textMain ${!canCalculateRisk ? 'opacity-50 cursor-not-allowed' : ''}`}
+                          disabled={!canCalculateRisk}
                         />
                     </div>
                   </div>
+                  {!canCalculateRisk && (
+                      <p className="text-[10px] text-orange-500/80 mt-[-10px]">* Fill Asset, Entry, SL, and Balance to enable calculators.</p>
+                  )}
+                  
+                  {isFormComplete && tradeCalculations && (
+                      <div className="bg-surfaceHighlight/50 border border-border rounded-lg p-3 space-y-3 text-xs">
+                          <div className="grid grid-cols-2 border-b border-border/50 pb-2">
+                            <div>
+                              <span className="text-textMuted font-medium text-[10px] uppercase block mb-1">Direction</span>
+                              <span className={`font-bold flex items-center gap-1 ${tradeCalculations.direction === 'LONG' ? 'text-profit' : 'text-loss'}`}>
+                                  {tradeCalculations.direction === 'LONG' ? <TrendingUp size={14}/> : <TrendingDown size={14}/>}
+                                  {tradeCalculations.direction}
+                              </span>
+                            </div>
+                            <div className="text-right">
+                              <span className="text-textMuted font-medium text-[10px] uppercase block mb-1">Order Type</span>
+                              <span className="font-bold text-textMain">{tradeCalculations.orderType}</span>
+                            </div>
+                          </div>
+                          
+                          <div className="grid grid-cols-2 gap-x-4 gap-y-2">
+                              <div className="flex flex-col gap-0.5">
+                                  <span className="text-textMuted text-[10px] uppercase">Take Profit</span>
+                                  <div className="font-mono text-textMain">
+                                      {tradeCalculations.tpCalc.points.toFixed(2)} Pts <span className="text-textMuted">|</span> {tradeCalculations.tpCalc.pips.toFixed(1)} Pips
+                                  </div>
+                                  <div className="font-mono text-[10px] text-textMuted">
+                                      {tradeCalculations.tpCalc.ticks.toFixed(0)} Ticks
+                                  </div>
+                              </div>
+                              
+                              <div className="flex flex-col gap-0.5 text-right">
+                                  <span className="text-textMuted text-[10px] uppercase">Stop Loss</span>
+                                  <div className="font-mono text-textMain">
+                                      {tradeCalculations.slCalc.points.toFixed(2)} Pts <span className="text-textMuted">|</span> {tradeCalculations.slCalc.pips.toFixed(1)} Pips
+                                  </div>
+                                  <div className="font-mono text-[10px] text-textMuted">
+                                      {tradeCalculations.slCalc.ticks.toFixed(0)} Ticks
+                                  </div>
+                              </div>
+                          </div>
+
+                          <div className="grid grid-cols-3 gap-2 pt-2 border-t border-border/50">
+                              <div>
+                                  <div className="text-[10px] text-textMuted uppercase mb-0.5">Risk</div>
+                                  <div className="font-bold text-loss">${tradeCalculations.riskAmount.toFixed(2)}</div>
+                              </div>
+                              <div className="text-center">
+                                  <div className="text-[10px] text-textMuted uppercase mb-0.5">Reward</div>
+                                  <div className="font-bold text-profit">${tradeCalculations.potentialProfit.toFixed(2)}</div>
+                              </div>
+                              <div className="text-right">
+                                  <div className="text-[10px] text-textMuted uppercase mb-0.5">RR Ratio</div>
+                                  <div className="font-bold text-primary">1:{tradeCalculations.rr.toFixed(2)}</div>
+                              </div>
+                          </div>
+                          
+                          <div className="flex justify-between items-center bg-background p-2 rounded border border-border/50">
+                              <span className="text-textMuted flex items-center gap-1"><Calculator size={10}/> Margin</span>
+                              <span className="font-mono font-medium">${tradeCalculations.requiredMargin.toFixed(2)}</span>
+                          </div>
+                      </div>
+                  )}
                   
                   <div className="bg-surface border border-border rounded-lg p-2 mt-2">
                       <h4 className="text-[10px] font-bold mb-1.5 flex justify-between items-center text-textMuted uppercase tracking-wider">
-                          Screenshots <span className="text-[9px] bg-surfaceHighlight px-1.5 py-0.5 rounded text-textMuted">Ctrl+V</span>
+                          Trade Screenshots
+                          <span className="text-[9px] bg-surfaceHighlight px-1.5 py-0.5 rounded text-textMuted">Paste enabled (Ctrl+V)</span>
                       </h4>
+                      
                       <div className="space-y-1.5">
                         {newTradeForm.screenshots && newTradeForm.screenshots.length > 0 && (
                             <div className="grid grid-cols-5 gap-1.5 mb-2">
                               {newTradeForm.screenshots.map((url: string, idx: number) => (
                                 <div key={idx} className="relative group rounded overflow-hidden border border-border h-10 w-full bg-background">
                                   <img src={url} alt={`Screenshot ${idx}`} className="w-full h-full object-cover" />
+                                  <button 
+                                    type="button"
+                                    onClick={() => handleRemoveImage(idx)}
+                                    className="absolute top-0.5 right-0.5 bg-black/60 hover:bg-red-600 text-white p-0.5 rounded opacity-0 group-hover:opacity-100 transition-opacity"
+                                  >
+                                    <Trash2 size={8} />
+                                  </button>
                                 </div>
                               ))}
                             </div>
                         )}
+
                         <div className="flex gap-1.5">
-                            <button 
-                                type="button"
-                                onClick={() => fileInputRef.current?.click()}
-                                className="flex-1 py-1 bg-surfaceHighlight/50 hover:bg-surfaceHighlight text-textMuted hover:text-textMain border border-border border-dashed rounded text-[10px] flex items-center justify-center gap-1.5 transition-colors h-7"
-                            >
-                                <Upload size={10} /> Upload
-                            </button>
-                            <input 
-                                type="file" 
-                                ref={fileInputRef} 
-                                className="hidden" 
-                                accept="image/*"
-                                onChange={handleFileUpload}
-                            />
+                            <div className="relative flex-1">
+                              <input 
+                                  type="file" 
+                                  ref={fileInputRef} 
+                                  className="hidden" 
+                                  accept="image/*"
+                                  onChange={handleFileUpload}
+                              />
+                              <button 
+                                  type="button"
+                                  onClick={() => fileInputRef.current?.click()}
+                                  className="w-full py-1 bg-surfaceHighlight/50 hover:bg-surfaceHighlight text-textMuted hover:text-textMain border border-border border-dashed rounded text-[10px] flex items-center justify-center gap-1.5 transition-colors h-7"
+                              >
+                                  <Upload size={10} /> Upload
+                              </button>
+                            </div>
+
+                            <div className="flex gap-1 flex-[1.5]">
+                              <input 
+                                type="text" 
+                                value={newImageUrl} 
+                                onChange={(e) => setNewImageUrl(e.target.value)} 
+                                placeholder="Image URL..."
+                                className="flex-1 bg-background border border-border rounded px-2 py-1 text-[10px] text-textMain focus:outline-none focus:border-primary h-7"
+                              />
+                              <button 
+                                  type="button"
+                                  onClick={handleAddImageFromUrl} 
+                                  className="px-2 bg-surfaceHighlight hover:bg-border rounded text-primary border border-border h-7 flex items-center justify-center"
+                              >
+                                <Plus size={12} />
+                              </button>
+                            </div>
                         </div>
                       </div>
                   </div>
@@ -1269,45 +1521,82 @@ function App() {
                       onClick={() => setIsNotesOpen(!isNotesOpen)}
                       className="flex items-center justify-between w-full py-2 text-xs font-medium text-textMuted hover:text-textMain border-b border-border transition-colors"
                     >
-                      <span className="flex items-center gap-2">Notes & Tags</span>
+                      <span className="flex items-center gap-2">
+                        Notes & Tags
+                        {(newTradeForm.tags?.length > 0 || newTradeForm.notes || newTradeForm.emotionalNotes) && (
+                            <span className="w-1.5 h-1.5 rounded-full bg-primary"></span>
+                        )}
+                      </span>
                       {isNotesOpen ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
                     </button>
 
                     {isNotesOpen && (
-                      <div className="mt-4 space-y-4">
+                      <div className="mt-4 space-y-4 animate-in slide-in-from-top-2 fade-in duration-200">
                         <div>
                           <label className="block text-xs font-medium text-textMuted mb-1">Technical Notes</label>
                           <textarea 
                             value={newTradeForm.notes || ''} 
                             onChange={(e) => setNewTradeForm({...newTradeForm, notes: e.target.value})} 
                             className="w-full bg-background border border-border rounded p-2 text-sm text-textMain min-h-[60px]" 
+                            placeholder="Setup / Strategy, Why is trade taken, and other technical notes"
                           />
                         </div>
-                        
+                        <div>
+                          <label className="block text-xs font-medium text-textMuted mb-1">Emotional Notes</label>
+                          <textarea 
+                            value={newTradeForm.emotionalNotes || ''} 
+                            onChange={(e) => setNewTradeForm({...newTradeForm, emotionalNotes: e.target.value})} 
+                            className="w-full bg-background border border-border rounded p-2 text-sm text-textMain min-h-[60px]" 
+                            placeholder="Explain Emotional feeling when taking trade"
+                          />
+                        </div>
+
                         <div className="border-t border-border pt-3">
-                          <label className="block text-xs font-medium text-textMuted mb-2">Tags</label>
-                          <div className="flex flex-wrap gap-1.5 p-2 bg-surfaceHighlight/30 rounded-lg border border-border/50 min-h-[36px]">
-                              {newTradeForm.tags.map((tag: string) => (
-                                  <span key={tag} className="flex items-center gap-1 pl-2 pr-1 py-0.5 bg-primary/10 text-primary text-[10px] font-medium rounded border border-primary/20">
-                                      {tag}
-                                      <button type="button" onClick={() => toggleTag(tag)}><X size={10} /></button>
-                                  </span>
-                              ))}
+                          <div className="flex justify-between items-center mb-2">
+                              <label className="block text-xs font-medium text-textMuted">Tags</label>
+                              <span className="text-[10px] text-textMuted">{newTradeForm.tags?.length || 0} selected</span>
                           </div>
-                          <div className="mt-2 space-y-2">
-                              {tagGroups.map(group => (
-                                  <div key={group.name} className="flex flex-wrap gap-1">
-                                      {group.tags.map(tag => (
-                                          <button
-                                            key={tag}
-                                            type="button"
-                                            onClick={() => toggleTag(tag)}
-                                            className={`px-1.5 py-0.5 text-[9px] border rounded ${newTradeForm.tags.includes(tag) ? 'bg-primary/20 border-primary text-primary' : 'bg-surface border-border text-textMuted'}`}
-                                          >
-                                              {tag}
-                                          </button>
-                                      ))}
+
+                          {newTradeForm.tags && newTradeForm.tags.length > 0 && (
+                              <div className="mb-3">
+                                  <div className="flex flex-wrap gap-1.5 p-2 bg-surfaceHighlight/30 rounded-lg border border-border/50 min-h-[36px]">
+                                  {newTradeForm.tags.map((tag: string) => (
+                                      <button
+                                          key={tag}
+                                          type="button"
+                                          onClick={() => toggleTag(tag)}
+                                          className="flex items-center gap-1 pl-2 pr-1 py-0.5 bg-primary/10 text-primary text-[10px] font-medium rounded border border-primary/20 hover:bg-loss/10 hover:text-loss hover:border-loss/30 transition-colors group"
+                                          title="Remove tag"
+                                      >
+                                          {tag}
+                                          <X size={10} className="opacity-70 group-hover:opacity-100" />
+                                      </button>
+                                  ))}
                                   </div>
+                              </div>
+                          )}
+
+                          <div className="space-y-3">
+                              {tagGroups.map(group => (
+                              <div key={group.name}>
+                                  <h5 className="text-[10px] text-textMuted uppercase font-bold mb-1.5">{group.name}</h5>
+                                  <div className="flex flex-wrap gap-1.5">
+                                  {group.tags.map(tag => (
+                                      <button
+                                      type="button"
+                                      key={tag}
+                                      onClick={() => toggleTag(tag)}
+                                      className={`px-2 py-1 rounded text-[10px] border transition-colors ${
+                                          newTradeForm.tags?.includes(tag)
+                                          ? 'bg-primary/20 border-primary text-primary opacity-50 cursor-default'
+                                          : 'bg-surface border-border text-textMuted hover:border-textMuted'
+                                      }`}
+                                      >
+                                      {tag}
+                                      </button>
+                                  ))}
+                                  </div>
+                              </div>
                               ))}
                           </div>
                         </div>
@@ -1329,6 +1618,7 @@ function App() {
                       type="button"
                       onClick={handleClearForm}
                       className="px-4 py-2 bg-surface border border-border hover:bg-surfaceHighlight text-textMuted hover:text-textMain rounded-lg font-medium text-sm transition-colors flex items-center justify-center gap-2"
+                      title="Clear Form"
                   >
                       <Eraser size={16} />
                   </button>

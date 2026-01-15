@@ -1,3 +1,4 @@
+
 import React, { useState, useRef, useEffect } from 'react';
 import { 
   LayoutDashboard, 
@@ -27,20 +28,16 @@ interface LayoutProps {
   selectedAccountId: string;
   setSelectedAccountId: (id: string) => void;
   onAddTradeClick: () => void;
+  startDate: string;
+  setStartDate: (date: string) => void;
+  endDate: string;
+  setEndDate: (date: string) => void;
   toggleTheme: () => void;
   isDarkMode: boolean;
   onUpdateBalance: (amount: number, type: 'deposit' | 'withdraw') => void;
-  startDate?: string;
-  setStartDate?: (date: string) => void;
-  endDate?: string;
-  setEndDate?: (date: string) => void;
-  
-  // User Management
-  users: User[];
-  currentUser: User | null;
-  onSwitchUser: (userId: string) => void;
-  onCreateUser: () => void;
-  onDeleteUser: (userId: string) => void;
+  users?: User[];
+  currentUser?: User | null;
+  onSwitchUser?: (userId: string) => void;
 }
 
 const Layout: React.FC<LayoutProps> = ({ 
@@ -51,14 +48,16 @@ const Layout: React.FC<LayoutProps> = ({
   selectedAccountId, 
   setSelectedAccountId,
   onAddTradeClick,
-  toggleTheme,
-  isDarkMode,
-  onUpdateBalance,
   startDate,
   setStartDate,
   endDate,
   setEndDate,
-  currentUser
+  toggleTheme,
+  isDarkMode,
+  onUpdateBalance,
+  users,
+  currentUser,
+  onSwitchUser
 }) => {
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
@@ -67,6 +66,14 @@ const Layout: React.FC<LayoutProps> = ({
   const userDropdownRef = useRef<HTMLDivElement>(null);
 
   const selectedAccount = accounts.find(a => a.id === selectedAccountId);
+
+  const navItems = [
+    { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
+    { id: 'calendar', label: 'Calendar', icon: Calendar },
+    { id: 'journal', label: 'Trades', icon: BookOpen },
+    { id: 'trash', label: 'Trash', icon: Trash2 },
+    { id: 'settings', label: 'Settings', icon: Settings },
+  ];
 
   useEffect(() => {
       const handleClickOutside = (event: MouseEvent) => {
@@ -77,19 +84,6 @@ const Layout: React.FC<LayoutProps> = ({
       document.addEventListener('mousedown', handleClickOutside);
       return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
-
-  const navItems = [
-    { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
-    { id: 'journal', label: 'Trades', icon: BookOpen },
-    { id: 'calendar', label: 'Calendar', icon: Calendar },
-    { id: 'trash', label: 'Trash', icon: Trash2 },
-    { id: 'settings', label: 'Settings', icon: Settings },
-  ];
-
-  const handleSettingsClick = () => {
-      setActiveTab('settings');
-      setIsUserDropdownOpen(false);
-  };
 
   return (
     <div className="flex h-screen bg-background text-textMain overflow-hidden font-sans transition-colors duration-200">
@@ -170,18 +164,17 @@ const Layout: React.FC<LayoutProps> = ({
       <div className="flex-1 flex flex-col h-full overflow-hidden relative">
         {/* Header (Mobile & Desktop Filters) */}
         <header className="h-14 border-b border-border bg-surface flex items-center justify-between px-4 md:px-6 z-20 shrink-0">
-          
-          {/* Left: Mobile Logo & Desktop Account Select */}
-          <div className="flex items-center gap-4">
-            <div className="flex items-center gap-2 md:hidden">
-                <div className="w-8 h-8 bg-primary rounded-lg flex items-center justify-center">
-                <CandlestickChart className="text-white" size={20} />
-                </div>
-                <span className="font-bold">PipSuite</span>
+          <div className="flex items-center gap-2 md:hidden">
+            <div className="w-8 h-8 bg-primary rounded-lg flex items-center justify-center">
+              <CandlestickChart className="text-white" size={20} />
             </div>
+            <span className="font-bold">PipSuite</span>
+          </div>
 
-            {/* Desktop Account Selector */}
-            <div className="hidden md:block relative">
+          {/* Global Filters */}
+          <div className="hidden md:flex items-center gap-4">
+             {/* Account Select */}
+             <div className="relative">
                  <select 
                     value={selectedAccountId} 
                     onChange={(e) => setSelectedAccountId(e.target.value)}
@@ -197,34 +190,10 @@ const Layout: React.FC<LayoutProps> = ({
                  </select>
                  <ChevronDown className="absolute right-2 top-1/2 -translate-y-1/2 text-textMuted pointer-events-none" size={12} />
              </div>
-
-             {/* Global Date Filter */}
-             {startDate && setStartDate && endDate && setEndDate && (
-                <div className="hidden lg:flex items-center gap-2 bg-surfaceHighlight border border-border p-1 rounded-lg ml-2">
-                    <input 
-                        type="date" 
-                        value={startDate}
-                        onChange={(e) => setStartDate(e.target.value)}
-                        className="bg-transparent border-none text-xs text-textMain focus:ring-0 cursor-pointer font-medium p-0.5 w-24"
-                        title="Global Start Date"
-                    />
-                    <span className="text-textMuted text-xs">-</span>
-                    <input 
-                        type="date" 
-                        value={endDate}
-                        onChange={(e) => setEndDate(e.target.value)}
-                        className="bg-transparent border-none text-xs text-textMain focus:ring-0 cursor-pointer font-medium p-0.5 w-24"
-                        title="Global End Date"
-                    />
-                </div>
-             )}
-          </div>
-
-          {/* Right: Balance & User Profile */}
-          <div className="flex items-center gap-4">
-             {/* Desktop Balance Display */}
+             
+             {/* Balance Display */}
              {selectedAccount && (
-                 <div className="hidden md:flex items-center gap-3 pl-4 border-l border-border h-8">
+                 <div className="flex items-center gap-3 ml-4 pl-4 border-l border-border h-8">
                      <span className="text-lg font-bold text-textMain font-mono tracking-tight">
                          ${selectedAccount.balance.toLocaleString()}
                      </span>
@@ -237,44 +206,60 @@ const Layout: React.FC<LayoutProps> = ({
                      </button>
                  </div>
              )}
+          </div>
 
-             {/* User Switcher */}
-             <div className="relative" ref={userDropdownRef}>
-                 <button 
-                    onClick={() => setIsUserDropdownOpen(!isUserDropdownOpen)}
-                    className="flex items-center gap-2 pl-3 border-l border-border h-8 hover:bg-surfaceHighlight rounded px-2 transition-colors"
-                 >
-                     <div className="w-6 h-6 bg-gradient-to-br from-primary to-blue-600 rounded-full flex items-center justify-center text-white text-[10px] font-bold">
-                         {currentUser?.name.charAt(0).toUpperCase() || 'U'}
-                     </div>
-                     <span className="text-xs font-medium text-textMain hidden sm:block max-w-[100px] truncate">
-                         {currentUser?.name || 'User'}
-                     </span>
-                     <ChevronDown size={12} className="text-textMuted" />
-                 </button>
+          {/* Right Side: User Switcher & Mobile Menu */}
+          <div className="flex items-center gap-4">
+             {/* User Switcher (Discreet addition) */}
+             {currentUser && users && users.length > 0 && (
+                 <div className="relative" ref={userDropdownRef}>
+                     <button 
+                        onClick={() => setIsUserDropdownOpen(!isUserDropdownOpen)}
+                        className="flex items-center gap-2 px-2 py-1 hover:bg-surfaceHighlight rounded-md transition-colors"
+                        title="Switch User"
+                     >
+                         <div className="w-6 h-6 bg-primary rounded-full flex items-center justify-center text-white text-[10px] font-bold">
+                             {currentUser.name.charAt(0).toUpperCase()}
+                         </div>
+                         <span className="text-xs font-medium text-textMain hidden sm:block truncate max-w-[100px]">
+                             {currentUser.name}
+                         </span>
+                         <ChevronDown size={12} className="text-textMuted" />
+                     </button>
 
-                 {isUserDropdownOpen && (
-                     <div className="absolute right-0 top-full mt-2 w-48 bg-surface border border-border rounded-xl shadow-2xl z-50 animate-in fade-in zoom-in-95 overflow-hidden">
-                         <div className="p-3 border-b border-border bg-surfaceHighlight/30 flex items-center gap-2">
-                             <div className="w-6 h-6 bg-primary rounded-full flex items-center justify-center text-white text-[10px] font-bold">
-                                 {currentUser?.name.charAt(0).toUpperCase() || 'U'}
+                     {isUserDropdownOpen && (
+                         <div className="absolute right-0 top-full mt-2 w-48 bg-surface border border-border rounded-lg shadow-xl z-50 py-1">
+                             <div className="px-3 py-2 border-b border-border bg-surfaceHighlight/20">
+                                 <p className="text-[10px] text-textMuted uppercase font-bold">Switch Profile</p>
                              </div>
-                             <div className="overflow-hidden">
-                                 <p className="text-xs font-bold text-textMain truncate">{currentUser?.name}</p>
-                                 <p className="text-[9px] text-textMuted truncate">Logged in</p>
+                             {users.map(u => (
+                                 <button
+                                    key={u.id}
+                                    onClick={() => {
+                                        if (onSwitchUser) onSwitchUser(u.id);
+                                        setIsUserDropdownOpen(false);
+                                    }}
+                                    className={`w-full text-left px-4 py-2 text-xs hover:bg-surfaceHighlight flex items-center gap-2 ${u.id === currentUser.id ? 'font-bold text-primary' : 'text-textMain'}`}
+                                 >
+                                     <div className={`w-2 h-2 rounded-full ${u.id === currentUser.id ? 'bg-primary' : 'bg-transparent border border-textMuted'}`}></div>
+                                     {u.name}
+                                 </button>
+                             ))}
+                             <div className="border-t border-border mt-1 pt-1">
+                                 <button 
+                                    onClick={() => {
+                                        setActiveTab('settings');
+                                        setIsUserDropdownOpen(false);
+                                    }}
+                                    className="w-full text-left px-4 py-2 text-xs text-textMuted hover:text-textMain hover:bg-surfaceHighlight flex items-center gap-2"
+                                 >
+                                     <Settings size={12} /> Manage Users
+                                 </button>
                              </div>
                          </div>
-                         <div className="p-1">
-                             <button 
-                                onClick={handleSettingsClick}
-                                className="w-full flex items-center gap-2 p-2 rounded-lg hover:bg-surfaceHighlight text-xs font-medium text-textMain transition-colors text-left"
-                             >
-                                 <Settings size={14} /> Manage Users
-                             </button>
-                         </div>
-                     </div>
-                 )}
-             </div>
+                     )}
+                 </div>
+             )}
 
              <button onClick={() => setIsMobileMenuOpen(!isMobileMenuOpen)} className="md:hidden text-textMuted hover:text-textMain">
                {isMobileMenuOpen ? <X size={20} /> : <Menu size={20} />}

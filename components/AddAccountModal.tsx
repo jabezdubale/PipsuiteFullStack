@@ -6,9 +6,10 @@ import { X, Save, Check } from 'lucide-react';
 interface AddAccountModalProps {
   onSave: (account: Account) => void;
   onClose: () => void;
+  userId: string;
 }
 
-const AddAccountModal: React.FC<AddAccountModalProps> = ({ onSave, onClose }) => {
+const AddAccountModal: React.FC<AddAccountModalProps> = ({ onSave, onClose, userId }) => {
   const [formData, setFormData] = useState<Partial<Account>>({
     name: '',
     currency: 'USD',
@@ -22,6 +23,7 @@ const AddAccountModal: React.FC<AddAccountModalProps> = ({ onSave, onClose }) =>
 
     const newAccount: Account = {
       id: `acc_${Date.now()}`,
+      userId: userId, // Link to current user
       name: formData.name,
       currency: formData.currency || 'USD',
       balance: Number(formData.balance) || 0,

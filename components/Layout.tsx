@@ -1,5 +1,5 @@
 
-import React, { useState } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import { 
   LayoutDashboard, 
   BookOpen, 
@@ -15,9 +15,12 @@ import {
   ChevronRight,
   CandlestickChart,
   Wallet,
-  Trash2
+  Trash2,
+  User as UserIcon,
+  LogOut,
+  Users
 } from 'lucide-react';
-import { Account } from '../types';
+import { Account, User } from '../types';
 import BalanceAdjustmentModal from './BalanceAdjustmentModal';
 
 interface LayoutProps {
@@ -35,6 +38,13 @@ interface LayoutProps {
   setStartDate?: (date: string) => void;
   endDate?: string;
   setEndDate?: (date: string) => void;
+  
+  // User Management
+  users: User[];
+  currentUser: User | null;
+  onSwitchUser: (userId: string) => void;
+  onCreateUser: () => void;
+  onDeleteUser: (userId: string) => void;
 }
 
 const Layout: React.FC<LayoutProps> = ({ 
@@ -51,13 +61,30 @@ const Layout: React.FC<LayoutProps> = ({
   startDate,
   setStartDate,
   endDate,
-  setEndDate
+  setEndDate,
+  users,
+  currentUser,
+  onSwitchUser,
+  onCreateUser,
+  onDeleteUser
 }) => {
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
   const [isBalanceModalOpen, setIsBalanceModalOpen] = useState(false);
+  const [isUserDropdownOpen, setIsUserDropdownOpen] = useState(false);
+  const userDropdownRef = useRef<HTMLDivElement>(null);
 
   const selectedAccount = accounts.find(a => a.id === selectedAccountId);
+
+  useEffect(() => {
+      const handleClickOutside = (event: MouseEvent) => {
+          if (userDropdownRef.current && !userDropdownRef.current.contains(event.target as Node)) {
+              setIsUserDropdownOpen(false);
+          }
+      };
+      document.addEventListener('mousedown', handleClickOutside);
+      return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
 
   const navItems = [
     { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
@@ -66,6 +93,11 @@ const Layout: React.FC<LayoutProps> = ({
     { id: 'trash', label: 'Trash', icon: Trash2 },
     { id: 'settings', label: 'Settings', icon: Settings },
   ];
+
+  const handleDeleteUserClick = (userId: string, e: React.MouseEvent) => {
+      e.stopPropagation();
+      onDeleteUser(userId);
+  };
 
   return (
     <div className="flex h-screen bg-background text-textMain overflow-hidden font-sans transition-colors duration-200">
@@ -196,7 +228,7 @@ const Layout: React.FC<LayoutProps> = ({
              )}
           </div>
 
-          {/* Right: Balance & Mobile Menu */}
+          {/* Right: Balance & User Profile */}
           <div className="flex items-center gap-4">
              {/* Desktop Balance Display */}
              {selectedAccount && (
@@ -213,6 +245,71 @@ const Layout: React.FC<LayoutProps> = ({
                      </button>
                  </div>
              )}
+
+             {/* User Switcher */}
+             <div className="relative" ref={userDropdownRef}>
+                 <button 
+                    onClick={() => setIsUserDropdownOpen(!isUserDropdownOpen)}
+                    className="flex items-center gap-2 pl-3 border-l border-border h-8 hover:bg-surfaceHighlight rounded px-2 transition-colors"
+                 >
+                     <div className="w-6 h-6 bg-gradient-to-br from-primary to-blue-600 rounded-full flex items-center justify-center text-white text-[10px] font-bold">
+                         {currentUser?.name.charAt(0).toUpperCase() || 'U'}
+                     </div>
+                     <span className="text-xs font-medium text-textMain hidden sm:block max-w-[100px] truncate">
+                         {currentUser?.name || 'User'}
+                     </span>
+                     <ChevronDown size={12} className="text-textMuted" />
+                 </button>
+
+                 {isUserDropdownOpen && (
+                     <div className="absolute right-0 top-full mt-2 w-56 bg-surface border border-border rounded-xl shadow-2xl z-50 animate-in fade-in zoom-in-95 overflow-hidden">
+                         <div className="p-3 border-b border-border bg-surfaceHighlight/30">
+                             <p className="text-xs font-bold text-textMain">Switch User</p>
+                         </div>
+                         <div className="max-h-60 overflow-y-auto">
+                             {users.map(u => (
+                                 <button
+                                    key={u.id}
+                                    onClick={() => {
+                                        onSwitchUser(u.id);
+                                        setIsUserDropdownOpen(false);
+                                    }}
+                                    className={`w-full flex items-center justify-between p-3 text-left hover:bg-surfaceHighlight transition-colors ${currentUser?.id === u.id ? 'bg-primary/5' : ''}`}
+                                 >
+                                     <div className="flex items-center gap-2">
+                                         <div className={`w-5 h-5 rounded-full flex items-center justify-center text-[9px] font-bold ${currentUser?.id === u.id ? 'bg-primary text-white' : 'bg-surfaceHighlight text-textMuted'}`}>
+                                             {u.name.charAt(0).toUpperCase()}
+                                         </div>
+                                         <span className={`text-xs ${currentUser?.id === u.id ? 'font-bold text-primary' : 'text-textMain'}`}>
+                                             {u.name}
+                                         </span>
+                                     </div>
+                                     {currentUser?.id !== u.id && (
+                                         <div 
+                                            onClick={(e) => handleDeleteUserClick(u.id, e)}
+                                            className="p-1 text-textMuted hover:text-loss hover:bg-loss/10 rounded transition-colors"
+                                            title="Delete User"
+                                         >
+                                             <Trash2 size={12} />
+                                         </div>
+                                     )}
+                                 </button>
+                             ))}
+                         </div>
+                         <div className="p-2 border-t border-border">
+                             <button 
+                                onClick={() => {
+                                    onCreateUser();
+                                    setIsUserDropdownOpen(false);
+                                }}
+                                className="w-full flex items-center justify-center gap-2 p-2 rounded-lg bg-surfaceHighlight hover:bg-border text-xs font-medium text-textMain transition-colors"
+                             >
+                                 <Plus size={14} /> Add New User
+                             </button>
+                         </div>
+                     </div>
+                 )}
+             </div>
 
              <button onClick={() => setIsMobileMenuOpen(!isMobileMenuOpen)} className="md:hidden text-textMuted hover:text-textMain">
                {isMobileMenuOpen ? <X size={20} /> : <Menu size={20} />}

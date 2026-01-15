@@ -1,3 +1,4 @@
+
 import { GoogleGenAI, Type } from "@google/genai";
 
 export interface ExtractedTradeData {
@@ -6,10 +7,9 @@ export interface ExtractedTradeData {
   stopLoss?: number;
 }
 
-export const extractTradeParamsFromImage = async (base64Image: string): Promise<ExtractedTradeData | null> => {
-  const apiKey = process.env.API_KEY;
+export const extractTradeParamsFromImage = async (base64Image: string, apiKey: string): Promise<ExtractedTradeData | null> => {
   if (!apiKey) {
-    throw new Error("Gemini API Key is missing from environment variables.");
+    throw new Error("Gemini API Key is missing.");
   }
 
   const ai = new GoogleGenAI({ apiKey });
@@ -55,7 +55,9 @@ export const extractTradeParamsFromImage = async (base64Image: string): Promise<
 
     const text = response.text;
     if (text) {
-       const parsed = JSON.parse(text);
+       // Robust cleanup for markdown code blocks (```json ... ```)
+       const cleanedText = text.replace(/```json|```/g, '').trim();
+       const parsed = JSON.parse(cleanedText);
        return parsed as ExtractedTradeData;
     }
 

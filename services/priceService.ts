@@ -1,10 +1,6 @@
 
 const BASE_URL = 'https://api.twelvedata.com/price';
 
-// --- CONFIGURATION ---
-// Replace this with your actual Twelve Data API Key
-const TWELVE_DATA_API_KEY: string = '8367337fa06f44b38314f68e31c446b9'; 
-
 // Map specific app symbols to Twelve Data tickers
 // Twelve Data free tier typically uses these standard tickers
 const SYMBOL_MAP: Record<string, string> = {
@@ -24,11 +20,9 @@ export interface PriceResult {
   sourceUrl?: string;
 }
 
-export const fetchCurrentPrice = async (symbol: string): Promise<PriceResult | null> => {
-  const apiKey = TWELVE_DATA_API_KEY;
-
-  if (!apiKey || apiKey === 'YOUR_TWELVE_DATA_API_KEY_HERE') {
-      console.warn("Twelve Data API Key is missing or default. Price fetch skipped.");
+export const fetchCurrentPrice = async (symbol: string, apiKey: string): Promise<PriceResult | null> => {
+  if (!apiKey) {
+      console.warn("Twelve Data API Key is missing. Price fetch skipped.");
       return null;
   }
 

@@ -1,5 +1,4 @@
 
-
 export enum TradeType {
   LONG = 'LONG',
   SHORT = 'SHORT',
@@ -38,16 +37,18 @@ export enum Session {
 export interface User {
   id: string;
   name: string;
-  twelveDataApiKey?: string;
+  geminiApiKey: string;
+  twelveDataApiKey: string;
 }
 
 export interface Account {
   id: string;
+  userId: string; // Linked to User
   name: string;
   currency: string;
   balance: number;
   isDemo: boolean;
-  type?: 'Real' | 'Demo' | 'Funded'; // Added specific type
+  type?: 'Real' | 'Demo' | 'Funded'; 
 }
 
 export interface TagGroup {
@@ -65,7 +66,7 @@ export interface TradePartial {
   id: string;
   quantity: number;
   pnl: number;
-  price?: number; // Added price field
+  price?: number; 
   date?: string;
 }
 
@@ -76,13 +77,13 @@ export interface Trade {
   type: TradeType;
   
   // Dates & Times
-  createdAt?: string; // Log time / Open Time
-  entryDate: string; // ISO String (Primary date for sorting/calendar)
-  entryTime?: string; // HH:MM (User specified execution time)
-  entrySession?: string; // Changed to string to support overlaps like "Tokyo, London"
-  exitDate?: string; // ISO String
-  exitTime?: string; // HH:MM (User specified execution time)
-  exitSession?: string; // Changed to string to support overlaps
+  createdAt?: string; 
+  entryDate: string; 
+  entryTime?: string; 
+  entrySession?: string; 
+  exitDate?: string; 
+  exitTime?: string; 
+  exitSession?: string; 
 
   // Pricing
   entryPrice: number;
@@ -94,33 +95,28 @@ export interface Trade {
   leverage?: number;
   quantity: number;
   riskPercentage?: number;
-  balance?: number; // Snapshot of account balance at time of trade
+  balance?: number; 
   
   // Execution
   orderType?: OrderType;
-  outcome?: TradeOutcome; // "Trade Situation"
+  outcome?: TradeOutcome; 
 
   // Financials
   fees: number;
-  mainPnl?: number; // PnL from the final close
-  partials?: TradePartial[]; // Array of partial takes
-  pnl: number; // Total Net PnL (Main + Partials - Fees)
-  status: TradeStatus; // Win/Loss calculation result
-  isBalanceUpdated?: boolean; // Tracks if the trade outcome has affected the account balance
+  mainPnl?: number; 
+  partials?: TradePartial[]; 
+  pnl: number; 
+  status: TradeStatus; 
+  isBalanceUpdated?: boolean; 
 
   // Context
   setup: string;
   notes: string;
   emotionalNotes?: string;
   
-  screenshots: string[]; // Array of URLs
+  screenshots: string[]; 
   tags: string[];
   
-  // Additional fields for column customization
-  duration?: string;
-  rMultiple?: number;
-  mistakes?: string;
-
   // Trash / Soft Delete functionality
   isDeleted?: boolean;
   deletedAt?: string;

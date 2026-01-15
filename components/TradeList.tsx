@@ -596,7 +596,26 @@ const TradeList: React.FC<TradeListProps> = ({ trades, selectedAccountId, onTrad
 
               const parseDate = (d: string | undefined) => {
                   if (!d) return undefined;
-                  const ts = Date.parse(d);
+                  
+                  // Try to parse using Date.parse first
+                  let ts = Date.parse(d);
+                  
+                  // Fallback: If DD/MM/YYYY or similar non-standard format
+                  if (isNaN(ts) && d.includes('/')) {
+                      const parts = d.split(/[/\s:]/);
+                      if (parts.length >= 3) {
+                          // Naive guess: DD/MM/YYYY
+                          // Note: In a real app, users should specify format, but here we assume common non-US
+                          const day = parseInt(parts[0]);
+                          const month = parseInt(parts[1]) - 1; // JS month 0-11
+                          const year = parseInt(parts[2]);
+                          if (!isNaN(day) && !isNaN(month) && !isNaN(year)) {
+                              const dt = new Date(year, month, day);
+                              ts = dt.getTime();
+                          }
+                      }
+                  }
+
                   return isNaN(ts) ? undefined : new Date(ts).toISOString();
               };
 
@@ -636,8 +655,6 @@ const TradeList: React.FC<TradeListProps> = ({ trades, selectedAccountId, onTrad
           }
 
           if (newTrades.length > 0) {
-              window.alert(`Found ${newTrades.length} valid trades. Importing now...`);
-              
               // Apply automatic tagging logic to imported trades
               const processedTrades = newTrades.map(t => {
                   const autoTags = calculateAutoTags({

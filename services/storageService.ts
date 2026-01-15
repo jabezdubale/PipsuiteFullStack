@@ -1,4 +1,5 @@
-import { Trade, Account, TagGroup, MonthlyNoteData } from '../types';
+
+import { Trade, Account, TagGroup, MonthlyNoteData, User } from '../types';
 
 const API_BASE = '/api';
 
@@ -20,6 +21,7 @@ const api = async <T>(endpoint: string, options?: RequestInit): Promise<T> => {
 
 const DEFAULT_ACCOUNTS: Account[] = [{
     id: 'default_1',
+    userId: 'start_user',
     name: 'Main Account',
     currency: 'USD',
     balance: 10000,
@@ -78,17 +80,31 @@ export const saveSetting = async (key: string, value: any): Promise<void> => {
     });
 };
 
+// --- User Management ---
+
+export const getUsers = async (): Promise<User[]> => {
+    return api<User[]>('/users');
+};
+
+export const saveUser = async (user: User): Promise<User[]> => {
+    return api<User[]>('/users', {
+        method: 'POST',
+        body: JSON.stringify(user)
+    });
+};
+
+export const deleteUser = async (id: string): Promise<User[]> => {
+    return api<User[]>(`/users/${id}`, { method: 'DELETE' });
+};
+
 // --- Account Management ---
 
-export const getAccounts = async (): Promise<Account[]> => {
+export const getAccounts = async (userId?: string): Promise<Account[]> => {
     try {
-        const accounts = await api<Account[]>('/accounts');
-        if (!accounts || accounts.length === 0) {
-            // Initialize defaults in DB if empty
-            await api('/accounts', { method: 'POST', body: JSON.stringify(DEFAULT_ACCOUNTS[0]) });
-            return DEFAULT_ACCOUNTS;
-        }
-        return accounts;
+        const query = userId ? `?userId=${userId}` : '';
+        const accounts = await api<Account[]>(`/accounts${query}`);
+        // If we requested for a specific user and got nothing, we might need to initialize (handled in UI)
+        return accounts || [];
     } catch (e) {
         console.error("Failed to fetch accounts", e);
         return [];
@@ -140,11 +156,13 @@ export const deleteTrades = async (ids: string[]): Promise<Trade[]> => {
 
 // --- Tag Management ---
 
-export const getTagGroups = async (): Promise<TagGroup[]> => {
+export const getTagGroups = async (userId?: string): Promise<TagGroup[]> => {
     try {
-        const groups = await api<TagGroup[]>('/tags');
+        const query = userId ? `?userId=${userId}` : '';
+        const groups = await api<TagGroup[]>(`/tags${query}`);
+        
+        // If user specific tags are empty, return defaults
         if (!groups || groups.length === 0) {
-            await saveTagGroups(DEFAULT_TAG_GROUPS);
             return DEFAULT_TAG_GROUPS;
         }
         return groups;
@@ -153,20 +171,20 @@ export const getTagGroups = async (): Promise<TagGroup[]> => {
     }
 };
 
-export const saveTagGroups = async (groups: TagGroup[]): Promise<TagGroup[]> => {
+export const saveTagGroups = async (groups: TagGroup[], userId?: string): Promise<TagGroup[]> => {
     return api<TagGroup[]>('/tags', {
         method: 'POST',
-        body: JSON.stringify(groups)
+        body: JSON.stringify({ groups, userId })
     });
 };
 
 // --- Strategy Management ---
 
-export const getStrategies = async (): Promise<string[]> => {
+export const getStrategies = async (userId?: string): Promise<string[]> => {
     try {
-        const strategies = await api<string[]>('/strategies');
+        const query = userId ? `?userId=${userId}` : '';
+        const strategies = await api<string[]>(`/strategies${query}`);
         if (!strategies || strategies.length === 0) {
-            await saveStrategies(DEFAULT_STRATEGIES);
             return DEFAULT_STRATEGIES;
         }
         return strategies;
@@ -175,10 +193,10 @@ export const getStrategies = async (): Promise<string[]> => {
     }
 };
 
-export const saveStrategies = async (strategies: string[]): Promise<string[]> => {
+export const saveStrategies = async (strategies: string[], userId?: string): Promise<string[]> => {
     return api<string[]>('/strategies', {
         method: 'POST',
-        body: JSON.stringify(strategies)
+        body: JSON.stringify({ strategies, userId })
     });
 };
 

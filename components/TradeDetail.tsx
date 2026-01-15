@@ -6,8 +6,6 @@ import { getSessionForTime } from '../utils/sessionHelpers';
 import CloseTradeModal from './CloseTradeModal';
 import { calculateAutoTags } from '../utils/autoTagLogic';
 
-// --- Helper Components ---
-
 const SectionHeader = ({ title }: { title: string }) => (
   <h3 className="text-xs font-bold text-primary uppercase tracking-wider mb-3">{title}</h3>
 );
@@ -67,7 +65,6 @@ interface TradeDetailProps {
 }
 
 const TradeDetail: React.FC<TradeDetailProps> = ({ trade, accounts, tagGroups, strategies, onSave, onDelete, onBack, onUpdateBalance }) => {
-  // Form State
   const [formData, setFormData] = useState<any>({
     ...trade,
     partials: trade.partials || [],
@@ -75,9 +72,8 @@ const TradeDetail: React.FC<TradeDetailProps> = ({ trade, accounts, tagGroups, s
     orderType: trade.orderType || OrderType.MARKET,
     entrySession: trade.entrySession || Session.NONE,
     exitSession: trade.exitSession || Session.NONE,
-    entryTime: trade.entryTime || '', // User entered time string
-    exitTime: trade.exitTime || '', // User entered time string
-    // Main Profit defaults to empty string if undefined (so it shows placeholder instead of 0)
+    entryTime: trade.entryTime || '',
+    exitTime: trade.exitTime || '',
     mainPnl: trade.mainPnl !== undefined ? trade.mainPnl : '', 
     entryPrice: trade.entryPrice.toString(),
     exitPrice: trade.exitPrice ? trade.exitPrice.toString() : '',
@@ -88,62 +84,43 @@ const TradeDetail: React.FC<TradeDetailProps> = ({ trade, accounts, tagGroups, s
     setup: trade.setup || ''
   });
 
-  // State for new partial input
   const [newPartial, setNewPartial] = useState({ lot: '', price: '', pnl: '', dateTime: '' });
-  
-  // State for Tag Groups expansion
   const [expandedTagGroup, setExpandedTagGroup] = useState<string | null>(null);
-  
-  // Modal States
   const [isCloseModalOpen, setIsCloseModalOpen] = useState(false);
   const [isReopenModalOpen, setIsReopenModalOpen] = useState(false);
   const [isMissedModalOpen, setIsMissedModalOpen] = useState(false);
-
   const [selectedImage, setSelectedImage] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
-  // Fixed: Replaced NodeJS.Timeout with ReturnType<typeof setTimeout> for compatibility
   const saveTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const isFirstRender = useRef(true);
 
-  // Derived Account Info
   const account = accounts.find(a => a.id === formData.accountId);
-
-  // Check Outcomes
   const isMissed = formData.outcome === TradeOutcome.MISSED;
   const isClosed = formData.outcome === TradeOutcome.CLOSED;
-
-  // --- Calculations ---
   const asset = ASSETS.find(a => a.assetPair === formData.symbol);
 
   const calculatedFinancials = useMemo(() => {
-    // Current Input Values
     const mainPnlStr = formData.mainPnl;
-    // Check if mainPnl is effectively set (not empty string, not null)
     const hasMainPnl = mainPnlStr !== '' && mainPnlStr !== null && !isNaN(parseFloat(mainPnlStr));
     const mainPnlVal = hasMainPnl ? parseFloat(mainPnlStr) : 0;
     
     const partialsTotal = (formData.partials || []).reduce((acc: number, p: TradePartial) => acc + (p.pnl || 0), 0);
     const hasPartials = formData.partials && formData.partials.length > 0;
     
-    // Net P&L Display Logic
     let netPnlDisplay: string | number = '-';
-    let netPnlValue = 0; // Value used for internal storage/logic
+    let netPnlValue = 0; 
 
     if (hasMainPnl) {
-        // If Main Profit is added, Net P&L = Main + Partials
         netPnlValue = mainPnlVal + partialsTotal;
         netPnlDisplay = netPnlValue;
     } else if (hasPartials) {
-        // If Partials added but no Main Profit, Net P&L = Partials (as intermediate calc)
         netPnlValue = partialsTotal;
         netPnlDisplay = netPnlValue;
     } else {
-        // Neither set
         netPnlValue = 0;
         netPnlDisplay = '-';
     }
 
-    // Planned Reward Logic
     let plannedReward = 0;
     let rr = 0;
     const tp = parseFloat(formData.takeProfit);
@@ -164,8 +141,6 @@ const TradeDetail: React.FC<TradeDetailProps> = ({ trade, accounts, tagGroups, s
          }
     }
     
-    // Fees Logic: Fees = Planned Reward - Net P&L
-    // Display only if Main Profit is present (implies trade is fully accounted for)
     let feesDisplay: string | number = '-';
     let feesValue = 0;
 
@@ -196,8 +171,6 @@ const TradeDetail: React.FC<TradeDetailProps> = ({ trade, accounts, tagGroups, s
   const slPips = getPips(formData.stopLoss);
   const tpPips = getPips(formData.takeProfit);
 
-  // --- Auto Save Logic ---
-  
   const performSave = (currentFormData: any, currentFinancials: any) => {
       const net = currentFinancials.netPnlValue;
       let status = TradeStatus.OPEN;
@@ -210,8 +183,6 @@ const TradeDetail: React.FC<TradeDetailProps> = ({ trade, accounts, tagGroups, s
           else status = TradeStatus.BREAK_EVEN;
       }
 
-      // --- CALCULATE AUTO TAGS ---
-      // We apply this on every save to keep tags in sync with partials/prices changes
       const updatedTags = calculateAutoTags({
           tags: currentFormData.tags,
           type: currentFormData.type,
@@ -222,31 +193,36 @@ const TradeDetail: React.FC<TradeDetailProps> = ({ trade, accounts, tagGroups, s
           partials: currentFormData.partials
       });
 
+      const entryPrice = parseFloat(currentFormData.entryPrice) || 0;
+      const exitPrice = parseFloat(currentFormData.exitPrice) || 0;
+      const quantity = parseFloat(currentFormData.quantity) || 0;
+      const fees = typeof currentFinancials.feesDisplay === 'number' ? currentFinancials.feesDisplay : 0;
+      const takeProfit = parseFloat(currentFormData.takeProfit) || undefined;
+      const stopLoss = parseFloat(currentFormData.stopLoss) || undefined;
+      const mainPnl = currentFormData.mainPnl === '' ? undefined : parseFloat(currentFormData.mainPnl);
+
       const updatedTrade: Trade = {
           ...currentFormData,
-          tags: updatedTags, // Apply calculated tags
-          entryPrice: parseFloat(currentFormData.entryPrice),
-          exitPrice: currentFormData.exitPrice ? parseFloat(currentFormData.exitPrice) : undefined,
-          quantity: parseFloat(currentFormData.quantity),
-          // Save fees as number if available, otherwise 0
-          fees: typeof currentFinancials.feesDisplay === 'number' ? currentFinancials.feesDisplay : 0, 
-          takeProfit: currentFormData.takeProfit ? parseFloat(currentFormData.takeProfit) : undefined,
-          stopLoss: currentFormData.stopLoss ? parseFloat(currentFormData.stopLoss) : undefined,
-          // Save mainPnl as undefined if empty string, to allow UI to show placeholder next time
-          mainPnl: currentFormData.mainPnl === '' ? undefined : parseFloat(currentFormData.mainPnl),
+          tags: updatedTags, 
+          entryPrice,
+          exitPrice: currentFormData.exitPrice ? exitPrice : undefined,
+          quantity,
+          fees,
+          takeProfit,
+          stopLoss,
+          mainPnl,
           pnl: net,
           status,
-          // Ensure isBalanceUpdated persists correctly from formData (which might have been updated above)
           isBalanceUpdated: currentFormData.isBalanceUpdated
       };
       
-      // Update local tags state if they changed so the UI reflects it immediately
-      // Compare arrays simply
-      if (JSON.stringify(updatedTags) !== JSON.stringify(currentFormData.tags)) {
+      // Fix infinite loop: Compare tags before setting state
+      const tagsChanged = JSON.stringify(updatedTags) !== JSON.stringify(currentFormData.tags);
+      if (tagsChanged) {
           setFormData((prev: any) => ({ ...prev, tags: updatedTags }));
       }
 
-      onSave(updatedTrade, false); // false = do not close
+      onSave(updatedTrade, false);
   };
 
   useEffect(() => {
@@ -266,9 +242,8 @@ const TradeDetail: React.FC<TradeDetailProps> = ({ trade, accounts, tagGroups, s
       return () => {
           if (saveTimeoutRef.current) clearTimeout(saveTimeoutRef.current);
       };
-  }, [formData, calculatedFinancials]);
+  }, [formData]); 
 
-  // --- Global Paste Listener ---
   useEffect(() => {
     const handlePaste = (e: ClipboardEvent) => {
       const items = e.clipboardData?.items;
@@ -333,42 +308,29 @@ const TradeDetail: React.FC<TradeDetailProps> = ({ trade, accounts, tagGroups, s
       }));
   };
 
-  // --- Handlers ---
-
   const handleChange = (field: string, value: any) => {
-    // Intercept Outcome Change
     if (field === 'outcome') {
         const newOutcome = value;
         const currentOutcome = formData.outcome;
-
-        // 1. Changing TO CLOSED
         if (newOutcome === TradeOutcome.CLOSED) {
             setIsCloseModalOpen(true);
             return;
         } 
-        
-        // 2. Changing CLOSED -> OPEN (Reopen)
         if (currentOutcome === TradeOutcome.CLOSED && newOutcome === TradeOutcome.OPEN) {
             setIsReopenModalOpen(true);
             return;
         }
-
-        // 3. Changing TO MISSED
         if (newOutcome === TradeOutcome.MISSED) {
             setIsMissedModalOpen(true);
             return;
         }
     }
-
     setFormData((prev: any) => ({ ...prev, [field]: value }));
   };
 
   const handleConfirmReopen = () => {
-      // Revert Balance Logic if previously closed and affected balance
       if (formData.isBalanceUpdated && onUpdateBalance) {
-          const previousPnl = formData.pnl; // The PnL that was applied
-          // If PnL was positive (profit), we added to balance, so now we Withdraw.
-          // If PnL was negative (loss), we deducted, so now we Deposit.
+          const previousPnl = formData.pnl;
           const type = previousPnl >= 0 ? 'withdraw' : 'deposit';
           onUpdateBalance(Math.abs(previousPnl), type);
       }
@@ -382,7 +344,6 @@ const TradeDetail: React.FC<TradeDetailProps> = ({ trade, accounts, tagGroups, s
       setFormData(updatedForm);
       setIsReopenModalOpen(false);
       
-      // Force Save
       const tradeToSave: Trade = {
           ...updatedForm,
           entryPrice: parseFloat(updatedForm.entryPrice),
@@ -399,14 +360,12 @@ const TradeDetail: React.FC<TradeDetailProps> = ({ trade, accounts, tagGroups, s
   };
 
   const handleConfirmMissed = () => {
-      // Revert Balance Logic if coming from CLOSED
       if (formData.outcome === TradeOutcome.CLOSED && formData.isBalanceUpdated && onUpdateBalance) {
           const previousPnl = formData.pnl;
           const type = previousPnl >= 0 ? 'withdraw' : 'deposit';
           onUpdateBalance(Math.abs(previousPnl), type);
       }
 
-      // Reset Financials (Core Profit & Partials)
       const updatedForm = {
           ...formData,
           outcome: TradeOutcome.MISSED,
@@ -418,7 +377,6 @@ const TradeDetail: React.FC<TradeDetailProps> = ({ trade, accounts, tagGroups, s
       setFormData(updatedForm);
       setIsMissedModalOpen(false);
 
-      // Force Save with cleared values
       const tradeToSave: Trade = {
           ...updatedForm,
           entryPrice: parseFloat(updatedForm.entryPrice),
@@ -436,18 +394,14 @@ const TradeDetail: React.FC<TradeDetailProps> = ({ trade, accounts, tagGroups, s
   };
 
   const handleCloseModalConfirm = (closedData: any) => {
-      // 1. Prepare data (without affecting balance flag as it's not part of Trade type)
       const updatedFormData = {
           ...formData,
           ...closedData,
           outcome: TradeOutcome.CLOSED
       };
-      
-      // Remove the temp flag before saving
       const affectBalance = closedData.affectBalance;
       delete updatedFormData.affectBalance;
 
-      // 2. Calculate final stats for the trade to be saved
       const main = parseFloat(updatedFormData.mainPnl) || 0;
       const partialsTotal = (updatedFormData.partials || []).reduce((acc: number, p: TradePartial) => acc + (p.pnl || 0), 0);
       const net = main + partialsTotal;
@@ -456,8 +410,6 @@ const TradeDetail: React.FC<TradeDetailProps> = ({ trade, accounts, tagGroups, s
       if (net > 0) status = TradeStatus.WIN;
       else if (net < 0) status = TradeStatus.LOSS;
 
-      // 3. Update Balance if requested
-      // We set the trade property to true if balance was affected
       updatedFormData.isBalanceUpdated = !!affectBalance;
 
       if (affectBalance && onUpdateBalance) {
@@ -465,10 +417,8 @@ const TradeDetail: React.FC<TradeDetailProps> = ({ trade, accounts, tagGroups, s
           onUpdateBalance(Math.abs(net), type);
       }
 
-      // **CRITICAL FIX**: Update local form state PnL so if we reopen immediately, we revert the correct amount
       updatedFormData.pnl = net;
 
-      // --- CALCULATE AUTO TAGS (Close Modal Confirm) ---
       const updatedTags = calculateAutoTags({
           tags: updatedFormData.tags,
           type: updatedFormData.type,
@@ -493,23 +443,17 @@ const TradeDetail: React.FC<TradeDetailProps> = ({ trade, accounts, tagGroups, s
         status
       };
 
-      // 4. Update local state and Save trade immediately
       setFormData(updatedFormData);
-      
-      // Ensure we call with shouldClose = false
       onSave(finalTradeToSave, false);
       setIsCloseModalOpen(false);
   };
 
   const handleDateTimeChange = (field: 'entry' | 'exit', value: string) => {
-      // value comes from input type="datetime-local" (YYYY-MM-DDTHH:mm) or empty
       if (!value) {
-          // User cleared the input
           setFormData((prev: any) => ({
              ...prev,
-             [`${field}Time`]: '', // Clear execution time flag
+             [`${field}Time`]: '', 
              [`${field}Session`]: Session.NONE,
-             // If exit, clear date too. If entry, keep date (as Log Date).
              [`${field}Date`]: field === 'exit' ? undefined : prev[`${field}Date`]
           }));
           return;
@@ -521,8 +465,6 @@ const TradeDetail: React.FC<TradeDetailProps> = ({ trade, accounts, tagGroups, s
           const hours = date.getHours().toString().padStart(2, '0');
           const mins = date.getMinutes().toString().padStart(2, '0');
           const time = `${hours}:${mins}`;
-          
-          // Auto-calculate Session
           const session = getSessionForTime(date);
 
           setFormData((prev: any) => ({
@@ -536,12 +478,10 @@ const TradeDetail: React.FC<TradeDetailProps> = ({ trade, accounts, tagGroups, s
 
   const handleAddPartial = () => {
     if (!newPartial.lot || !newPartial.pnl) return;
-    
     let isoDate = new Date().toISOString();
     if (newPartial.dateTime) {
         isoDate = new Date(newPartial.dateTime).toISOString();
     }
-
     const p: TradePartial = {
         id: Date.now().toString(),
         quantity: parseFloat(newPartial.lot),
@@ -549,19 +489,12 @@ const TradeDetail: React.FC<TradeDetailProps> = ({ trade, accounts, tagGroups, s
         price: newPartial.price ? parseFloat(newPartial.price) : undefined,
         date: isoDate
     };
-    
-    setFormData((prev: any) => ({
-        ...prev,
-        partials: [...prev.partials, p]
-    }));
+    setFormData((prev: any) => ({ ...prev, partials: [...prev.partials, p] }));
     setNewPartial({ lot: '', price: '', pnl: '', dateTime: '' });
   };
 
   const handleRemovePartial = (id: string) => {
-    setFormData((prev: any) => ({
-        ...prev,
-        partials: prev.partials.filter((p: TradePartial) => p.id !== id)
-    }));
+    setFormData((prev: any) => ({ ...prev, partials: prev.partials.filter((p: TradePartial) => p.id !== id) }));
   };
 
   const toggleTag = (tag: string) => {
@@ -573,9 +506,6 @@ const TradeDetail: React.FC<TradeDetailProps> = ({ trade, accounts, tagGroups, s
       }
   };
 
-  // ... rest of the file ...
-  // (No other changes needed in render, keeping existing JSX)
-  // ...
   const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file) {
@@ -591,65 +521,48 @@ const TradeDetail: React.FC<TradeDetailProps> = ({ trade, accounts, tagGroups, s
     }
   };
   
-  // Helpers for Display
   const formatDisplayDate = (isoString: string) => {
       if (!isoString) return '';
       const date = new Date(isoString);
       if (isNaN(date.getTime())) return '';
-
-      // Get local time components
       const d = date.getDate().toString().padStart(2, '0');
       const m = (date.getMonth() + 1).toString().padStart(2, '0');
       const y = date.getFullYear();
-      
-      // 12-Hour Time Format
       let hours = date.getHours();
       const ampm = hours >= 12 ? 'PM' : 'AM';
       hours = hours % 12;
-      hours = hours ? hours : 12; // the hour '0' should be '12'
+      hours = hours ? hours : 12; 
       const h = hours.toString().padStart(2, '0');
-      
       const min = date.getMinutes().toString().padStart(2, '0');
       const s = date.getSeconds().toString().padStart(2, '0');
-
-      // Calculate Offset
       const offsetMinutes = date.getTimezoneOffset();
       const offsetHours = Math.abs(Math.floor(offsetMinutes / 60));
       const offsetMinsRemainder = Math.abs(offsetMinutes % 60);
-      const sign = offsetMinutes > 0 ? '-' : '+'; // Inverted sign for display convention
-
+      const sign = offsetMinutes > 0 ? '-' : '+';
       let offsetString = `UTC${sign}${offsetHours}`;
       if (offsetMinsRemainder > 0) {
         offsetString += `:${offsetMinsRemainder.toString().padStart(2, '0')}`;
       }
-      
       return `${d}/${m}/${y}, ${h}:${min}:${s} ${ampm} ${offsetString}`;
   };
 
-  // Convert ISO string to YYYY-MM-DDTHH:mm for datetime-local input
   const getInputValue = (isoString: string) => {
       if (!isoString) return '';
       const date = new Date(isoString);
       if (isNaN(date.getTime())) return '';
-      
       const year = date.getFullYear();
       const month = (date.getMonth() + 1).toString().padStart(2, '0');
       const day = date.getDate().toString().padStart(2, '0');
       const hours = date.getHours().toString().padStart(2, '0');
       const minutes = date.getMinutes().toString().padStart(2, '0');
-      
       return `${year}-${month}-${day}T${hours}:${minutes}`;
   };
 
   return (
     <div className="max-w-7xl mx-auto pb-20 animate-in fade-in duration-300 font-sans -mt-4">
-      
-      {/* Top Navigation Bar */}
       <div className="flex items-center justify-between py-3 mb-6 border-b border-border sticky top-0 bg-background/95 backdrop-blur z-20">
          <div className="flex items-center gap-4">
-             <button onClick={onBack} className="p-2 hover:bg-surfaceHighlight rounded-full transition-colors text-textMuted hover:text-textMain">
-                 <ArrowLeft size={20} />
-             </button>
+             <button onClick={onBack} className="p-2 hover:bg-surfaceHighlight rounded-full transition-colors text-textMuted hover:text-textMain"><ArrowLeft size={20} /></button>
              <div>
                  <h1 className="text-xl font-bold flex items-center gap-2">
                      <div className="relative group">
@@ -660,18 +573,10 @@ const TradeDetail: React.FC<TradeDetailProps> = ({ trade, accounts, tagGroups, s
                             title={isClosed || isMissed ? "Asset cannot be changed for closed/missed trades" : "Click to change asset"}
                             disabled={isClosed || isMissed}
                         >
-                            {ASSETS.map(asset => (
-                                <option key={asset.id} value={asset.assetPair} className="bg-surface text-textMain">
-                                    {asset.assetPair}
-                                </option>
-                            ))}
+                            {ASSETS.map(asset => (<option key={asset.id} value={asset.assetPair} className="bg-surface text-textMain">{asset.assetPair}</option>))}
                         </select>
                      </div>
-                     <span className={`text-xs px-2 py-0.5 border rounded ${
-                         formData.type === TradeType.LONG ? 'border-green-500/30 text-green-500' : 'border-red-500/30 text-red-500'
-                     }`}>
-                         {formData.type}
-                     </span>
+                     <span className={`text-xs px-2 py-0.5 border rounded ${formData.type === TradeType.LONG ? 'border-green-500/30 text-green-500' : 'border-red-500/30 text-red-500'}`}>{formData.type}</span>
                  </h1>
                  <div className="flex items-center gap-2">
                     <span className="text-xs text-textMuted">{new Date(formData.entryDate).toLocaleDateString()}</span>
@@ -685,418 +590,371 @@ const TradeDetail: React.FC<TradeDetailProps> = ({ trade, accounts, tagGroups, s
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
-          
-          {/* LEFT COLUMN: Context & Execution (4 Cols) */}
           <div className="lg:col-span-4 space-y-8">
-              
-              {/* Context Section */}
               <section>
                   <SectionHeader title="Trade Context" />
                   <div className="grid grid-cols-2 gap-x-4 gap-y-4">
-                      {/* Row 1 */}
                       <InputGroup label="Account">
                           <div className="h-[34px] flex items-center px-2 text-sm font-medium border border-border/40 rounded-md">
                              {account?.name || '-'} <span className="text-xs text-textMuted ml-2">({account?.type || (account?.isDemo ? 'Demo' : 'Real')})</span>
                           </div>
                       </InputGroup>
+                      <InputGroup label="Status">
+                          <div className={`h-[34px] flex items-center px-2 text-sm font-bold border border-border/40 rounded-md ${
+                              formData.status === TradeStatus.WIN ? 'text-profit' : 
+                              formData.status === TradeStatus.LOSS ? 'text-loss' : 'text-textMuted'
+                          }`}>
+                              {formData.status}
+                          </div>
+                      </InputGroup>
                       
-                      <InputGroup label="Outcome">
-                          <MinimalSelect value={formData.outcome} onChange={(e) => handleChange('outcome', e.target.value)} className="bg-surface">
-                              {Object.values(TradeOutcome).map(v => <option key={v} value={v} className="bg-surface text-textMain">{v}</option>)}
+                      <InputGroup label="Setup / Strategy">
+                          <MinimalSelect value={formData.setup} onChange={(e) => handleChange('setup', e.target.value)}>
+                              <option value="">Select Strategy...</option>
+                              {strategies.map(s => <option key={s} value={s} className="bg-surface text-textMain">{s}</option>)}
                           </MinimalSelect>
                       </InputGroup>
 
-                      {/* Row 2 */}
-                      <InputGroup label="Entry Price">
-                          <MinimalInput 
-                            type="number" 
-                            step="any" 
-                            value={formData.entryPrice} 
-                            onChange={(e) => handleChange('entryPrice', e.target.value)} 
-                            disabled={isClosed}
-                          />
-                      </InputGroup>
-                      <InputGroup label="Exit Price">
-                          <MinimalInput 
-                            type="number" 
-                            step="any" 
-                            value={formData.exitPrice} 
-                            onChange={(e) => handleChange('exitPrice', e.target.value)} 
-                            placeholder="-"
-                            disabled={isClosed || isMissed}
-                          />
-                      </InputGroup>
-
-                      {/* Row 3 - Single Field Date/Time with Display */}
-                      <InputGroup label="Entry Time">
-                          <div>
-                            <MinimalInput 
-                                type="datetime-local" 
-                                value={getInputValue(formData.entryDate)} 
-                                onChange={(e) => handleDateTimeChange('entry', e.target.value)}
-                                disabled={isClosed || isMissed}
-                            />
-                            <div className="text-[10px] text-textMuted mt-1 font-mono">
-                                {formData.entryTime ? formatDisplayDate(formData.entryDate) : `Log Time: ${formatDisplayDate(formData.entryDate)}`}
-                            </div>
-                          </div>
-                      </InputGroup>
-                      <InputGroup label="Exit Time">
-                          <div>
-                            <MinimalInput 
-                                type="datetime-local" 
-                                value={getInputValue(formData.exitDate)} 
-                                onChange={(e) => handleDateTimeChange('exit', e.target.value)}
-                                disabled={isClosed || isMissed}
-                            />
-                            <div className="text-[10px] text-textMuted mt-1 font-mono">
-                                {formData.exitDate ? formatDisplayDate(formData.exitDate) : '-'}
-                            </div>
-                          </div>
-                      </InputGroup>
-
-                      {/* Row 4 - Sessions (Read Only) */}
-                      <InputGroup label="Entry Session">
-                           <MinimalInput 
-                              readOnly
-                              value={formData.entrySession || '-'} 
-                              className="bg-surfaceHighlight/30 text-textMuted cursor-default"
-                              tabIndex={-1}
-                           />
-                      </InputGroup>
-
-                      <InputGroup label="Exit Session">
-                           <MinimalInput 
-                              readOnly
-                              value={formData.exitSession || '-'} 
-                              className="bg-surfaceHighlight/30 text-textMuted cursor-default"
-                              tabIndex={-1}
-                           />
+                      <InputGroup label="Order Type">
+                          <MinimalSelect value={formData.orderType} onChange={(e) => handleChange('orderType', e.target.value)}>
+                              {Object.values(OrderType).map(type => <option key={type} value={type} className="bg-surface text-textMain">{type}</option>)}
+                          </MinimalSelect>
                       </InputGroup>
                   </div>
               </section>
 
-              {/* Execution Section */}
-              <section>
-                  <SectionHeader title="Execution" />
-                  <div className="space-y-4">
-                      <div className="grid grid-cols-2 gap-4">
-                       <InputGroup label="Order Type">
-                           <MinimalInput 
-                              value={formData.orderType} 
-                              readOnly
-                              className="bg-surfaceHighlight/30 text-textMuted cursor-default" 
-                              tabIndex={-1}
-                            />
-                      </InputGroup>
-                      <InputGroup label="Strategy">
-                           <MinimalSelect 
-                              value={formData.setup} 
-                              onChange={(e) => handleChange('setup', e.target.value)} 
-                              className="bg-surface"
-                           >
-                              <option value="">Select Strategy</option>
-                              {strategies.map(s => (
-                                  <option key={s} value={s} className="bg-surface text-textMain">{s}</option>
-                              ))}
-                           </MinimalSelect>
-                      </InputGroup>
-                      </div>
-
-                      <div className="grid grid-cols-2 gap-4">
-                          <InputGroup label="Stop Loss">
-                              <div className="relative">
-                                <MinimalInput type="number" step="any" value={formData.stopLoss} onChange={(e) => handleChange('stopLoss', e.target.value)} placeholder="-" disabled={isClosed} />
-                                {slPips && <span className="absolute right-2 top-1/2 -translate-y-1/2 text-[10px] text-textMuted font-mono">{slPips} pips</span>}
-                              </div>
-                          </InputGroup>
-                          <InputGroup label="Take Profit">
-                              <div className="relative">
-                                <MinimalInput type="number" step="any" value={formData.takeProfit} onChange={(e) => handleChange('takeProfit', e.target.value)} placeholder="-" disabled={isClosed} />
-                                {tpPips && <span className="absolute right-2 top-1/2 -translate-y-1/2 text-[10px] text-textMuted font-mono">{tpPips} pips</span>}
-                              </div>
-                          </InputGroup>
-                      </div>
-
-                      <div className="grid grid-cols-2 gap-4">
-                           <InputGroup label="Lot Size">
-                              <MinimalInput type="number" step="any" value={formData.quantity} onChange={(e) => handleChange('quantity', e.target.value)} disabled={isClosed} />
-                          </InputGroup>
-                          <InputGroup label="Planned Reward">
-                              <div className="h-[34px] flex items-center px-2 text-sm font-medium border border-border/40 rounded-md text-textMain">
-                                  ${calculatedFinancials.plannedReward.toFixed(2)}
-                              </div>
-                          </InputGroup>
-                      </div>
-                      
-                      <InputGroup label="RR Ratio">
-                          <div className="h-[34px] flex items-center px-2 text-sm font-medium border border-border/40 rounded-md text-textMain">
-                              {calculatedFinancials.rr > 0 ? `1:${calculatedFinancials.rr.toFixed(2)}` : '-'}
-                          </div>
-                      </InputGroup>
-                  </div>
-              </section>
-
-          </div>
-
-          {/* MIDDLE COLUMN: Financials & Partials (4 Cols) */}
-          <div className="lg:col-span-4 space-y-8">
               <section>
                   <SectionHeader title="Financials" />
-                  
-                  {/* PnL Box */}
-                  <div className="bg-surface border border-border rounded-xl p-4 shadow-sm">
-                      {/* Row 1: Net PnL (Read-Only) */}
-                      <div className="text-center mb-6">
-                          <label className="text-[10px] uppercase text-textMuted font-bold mb-1 block">Net P&L (Calc)</label>
-                          <div className={`text-3xl font-bold ${
-                              typeof calculatedFinancials.netPnlDisplay === 'number' 
-                                  ? (calculatedFinancials.netPnlDisplay >= 0 ? 'text-profit' : 'text-loss') 
-                                  : 'text-textMuted'
-                          }`}>
-                              {typeof calculatedFinancials.netPnlDisplay === 'number' 
-                                  ? `$${calculatedFinancials.netPnlDisplay.toFixed(2)}` 
-                                  : calculatedFinancials.netPnlDisplay}
-                          </div>
+                  <div className="bg-surfaceHighlight/20 rounded-lg p-4 space-y-4 border border-border/40">
+                      <div className="flex justify-between items-center">
+                          <span className="text-xs text-textMuted font-medium uppercase">Net P&L</span>
+                          <span className={`text-2xl font-bold font-mono ${calculatedFinancials.netPnlValue >= 0 ? 'text-profit' : 'text-loss'}`}>
+                              {calculatedFinancials.netPnlValue >= 0 ? '+' : ''}{calculatedFinancials.netPnlDisplay !== '-' ? `$${calculatedFinancials.netPnlValue.toFixed(2)}` : '-'}
+                          </span>
                       </div>
-
-                      {/* Row 2: Core Profit | Partials Profit | Fees */}
-                      <div className="grid grid-cols-3 gap-4 text-center">
+                      
+                      <div className="grid grid-cols-2 gap-4 pt-2 border-t border-border/30">
                           <div>
-                              <label className="text-[10px] uppercase text-textMuted mb-1 block">Core P&L</label>
-                              <div className="relative">
-                                <span className="absolute left-0 top-1/2 -translate-y-1/2 text-xs text-textMuted">$</span>
-                                <input 
-                                    type="number" 
-                                    step="any"
-                                    value={formData.mainPnl}
-                                    onChange={(e) => handleChange('mainPnl', e.target.value)}
-                                    className={`w-full bg-transparent text-center text-sm font-bold text-textMain focus:outline-none border-b border-border/30 hover:border-border ${isClosed || isMissed ? 'opacity-50 cursor-not-allowed' : ''}`}
-                                    placeholder="-"
-                                    disabled={isClosed || isMissed}
-                                />
-                              </div>
+                              <span className="block text-[10px] text-textMuted uppercase mb-1">Fees</span>
+                              <MinimalInput 
+                                type="number" 
+                                step="any"
+                                value={formData.fees} 
+                                onChange={(e) => handleChange('fees', e.target.value)} 
+                                className="font-mono text-xs"
+                              />
                           </div>
                           <div>
-                              <label className="text-[10px] uppercase text-textMuted mb-1 block">Partials Profit</label>
-                              <div className="text-sm font-bold text-textMain py-1.5">${calculatedFinancials.partialsTotal.toFixed(2)}</div>
-                          </div>
-                          <div>
-                              <label className="text-[10px] uppercase text-textMuted mb-1 block">Fees (Calc)</label>
-                              <div className={`text-sm font-medium py-1.5 ${typeof calculatedFinancials.feesDisplay === 'number' ? 'text-loss' : 'text-textMuted'}`}>
-                                  {typeof calculatedFinancials.feesDisplay === 'number' ? `$${calculatedFinancials.feesDisplay.toFixed(2)}` : calculatedFinancials.feesDisplay}
+                              <span className="block text-[10px] text-textMuted uppercase mb-1">RR Ratio</span>
+                              <div className="h-[34px] flex items-center text-sm font-mono text-primary">
+                                  {calculatedFinancials.rr > 0 ? `1:${calculatedFinancials.rr.toFixed(2)}` : '-'}
                               </div>
                           </div>
                       </div>
                   </div>
+              </section>
 
-                  {/* Partials Manager */}
-                  <div className="mt-8">
-                      <SectionHeader title="Partial Profits" />
-                      <div className="bg-surface border border-border rounded-lg overflow-hidden">
-                          {/* Partials Header */}
-                          <div className="grid grid-cols-12 gap-2 p-2 bg-surfaceHighlight/30 text-[10px] font-bold text-textMuted uppercase border-b border-border/50">
-                              <div className="col-span-2">Lot</div>
-                              <div className="col-span-3">Exit Price</div>
-                              <div className="col-span-3">P&L</div>
-                              <div className="col-span-3">Time</div>
-                              <div className="col-span-1"></div>
-                          </div>
-
-                          {/* List */}
-                          {formData.partials.length === 0 && (
-                              <div className="p-4 text-center text-xs text-textMuted italic">No partials recorded.</div>
-                          )}
-                          {formData.partials.map((p: TradePartial) => (
-                              <div key={p.id} className="grid grid-cols-12 gap-2 items-center p-2 border-b border-border/50 text-xs last:border-0 hover:bg-surfaceHighlight/10">
-                                  <div className="col-span-2 font-mono">{p.quantity}</div>
-                                  <div className="col-span-3 font-mono">{p.price || '-'}</div>
-                                  <div className="col-span-3 font-mono font-bold text-textMain">${p.pnl}</div>
-                                  <div className="col-span-3 text-[10px] text-textMuted truncate">{formatDisplayDate(p.date || '')}</div>
-                                  <div className="col-span-1 text-right">
-                                      <button onClick={() => handleRemovePartial(p.id)} disabled={isClosed} className={`text-textMuted ${isClosed ? 'opacity-50 cursor-not-allowed' : 'hover:text-loss'}`}><X size={12}/></button>
-                                  </div>
-                              </div>
+              <section>
+                  <SectionHeader title="Tags" />
+                  <div className="bg-surfaceHighlight/20 rounded-lg p-3 border border-border/40">
+                      <div className="flex flex-wrap gap-2 mb-3 min-h-[30px]">
+                          {formData.tags.map((tag: string) => (
+                              <span key={tag} className="inline-flex items-center gap-1 px-2 py-1 rounded text-[10px] bg-primary/10 text-primary border border-primary/20">
+                                  {tag}
+                                  <button onClick={() => toggleTag(tag)} className="hover:text-textMain"><X size={10}/></button>
+                              </span>
                           ))}
-                          
-                          {/* Add Partial Input Row */}
-                          <div className={`p-2 bg-surfaceHighlight/20 border-t border-border/50 space-y-2 ${isClosed || isMissed ? 'opacity-50 pointer-events-none' : ''}`}>
-                              <div className="grid grid-cols-12 gap-2">
-                                  <div className="col-span-2">
-                                      <input type="number" placeholder="Lot" className="w-full bg-background border border-border/60 rounded px-1 py-1 text-xs" value={newPartial.lot} onChange={e => setNewPartial({...newPartial, lot: e.target.value})} disabled={isClosed || isMissed} />
-                                  </div>
-                                  <div className="col-span-3">
-                                      <input type="number" placeholder="Exit Price" className="w-full bg-background border border-border/60 rounded px-1 py-1 text-xs" value={newPartial.price} onChange={e => setNewPartial({...newPartial, price: e.target.value})} disabled={isClosed || isMissed} />
-                                  </div>
-                                  <div className="col-span-3">
-                                      <input type="number" placeholder="P&L" className="w-full bg-background border border-border/60 rounded px-1 py-1 text-xs" value={newPartial.pnl} onChange={e => setNewPartial({...newPartial, pnl: e.target.value})} disabled={isClosed || isMissed} />
-                                  </div>
-                                  <div className="col-span-4">
-                                      <input 
-                                        type="datetime-local" 
-                                        className="w-full bg-background border border-border/60 rounded px-1 py-1 text-[10px]" 
-                                        value={newPartial.dateTime} 
-                                        onChange={e => setNewPartial({...newPartial, dateTime: e.target.value})} 
-                                        disabled={isClosed || isMissed}
-                                      />
-                                      {newPartial.dateTime && (
-                                        <div className="text-[9px] text-textMuted mt-0.5 font-mono">
-                                            {formatDisplayDate(new Date(newPartial.dateTime).toISOString())}
-                                        </div>
+                          {formData.tags.length === 0 && <span className="text-xs text-textMuted italic p-1">No tags selected</span>}
+                      </div>
+                      
+                      <div className="border-t border-border/40 pt-2 max-h-[200px] overflow-y-auto">
+                          {tagGroups.map((group) => {
+                              const isExpanded = expandedTagGroup === group.name;
+                              return (
+                                  <div key={group.name} className="mb-1">
+                                      <button 
+                                        onClick={() => setExpandedTagGroup(isExpanded ? null : group.name)}
+                                        className="w-full flex justify-between items-center p-1.5 text-xs font-medium text-textMuted hover:text-textMain hover:bg-surfaceHighlight/30 rounded transition-colors"
+                                      >
+                                          {group.name}
+                                          {isExpanded ? <ChevronUp size={12} /> : <ChevronDown size={12} />}
+                                      </button>
+                                      {isExpanded && (
+                                          <div className="p-1.5 flex flex-wrap gap-1.5">
+                                              {group.tags.map(tag => (
+                                                  <button
+                                                    key={tag}
+                                                    onClick={() => toggleTag(tag)}
+                                                    className={`px-1.5 py-0.5 rounded text-[9px] border transition-colors ${
+                                                        formData.tags.includes(tag) 
+                                                        ? 'bg-primary text-white border-primary' 
+                                                        : 'bg-surface border-border/60 text-textMuted hover:border-primary/40'
+                                                    }`}
+                                                  >
+                                                      {tag}
+                                                  </button>
+                                              ))}
+                                          </div>
                                       )}
                                   </div>
-                              </div>
-                              <div className="flex justify-end pt-2">
-                                  <button onClick={handleAddPartial} disabled={isClosed || isMissed} className="px-3 py-1 bg-primary text-white text-xs rounded hover:bg-blue-600 flex items-center gap-1 disabled:opacity-50 disabled:cursor-not-allowed"><Plus size={12}/> Add Partial</button>
-                              </div>
-                          </div>
+                              )
+                          })}
                       </div>
                   </div>
               </section>
           </div>
 
-          {/* RIGHT COLUMN: Journal & Media (4 Cols) */}
-          <div className="lg:col-span-4 space-y-8">
-              
-              <section>
-                  <SectionHeader title="Journal" />
+          <div className="lg:col-span-8 space-y-8">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                  {/* Entry & Risk Column */}
                   <div className="space-y-6">
-                      <InputGroup label="Technical Notes">
-                          <textarea 
-                              value={formData.notes}
-                              onChange={(e) => handleChange('notes', e.target.value)}
-                              className="w-full bg-transparent border border-border/40 rounded-md p-3 text-sm text-textMain focus:outline-none focus:border-primary min-h-[100px] resize-none"
-                              placeholder="Strategy, Setup details..."
-                          />
-                      </InputGroup>
-                      
-                      <InputGroup label="Emotional Notes">
-                          <textarea 
-                              value={formData.emotionalNotes}
-                              onChange={(e) => handleChange('emotionalNotes', e.target.value)}
-                              className="w-full bg-transparent border border-border/40 rounded-md p-3 text-sm text-textMain focus:outline-none focus:border-primary min-h-[80px] resize-none"
-                              placeholder="How did you feel?"
-                          />
-                      </InputGroup>
-
-                      {/* Tag Groups Selector */}
-                      <div>
-                          <label className="text-[10px] uppercase text-textMuted font-medium block mb-2">Tags</label>
-                          <div className="space-y-2">
-                             {/* Active Tags Display */}
-                             <div className="flex flex-wrap gap-2 mb-4">
-                                  {formData.tags.map((tag: string) => (
-                                      <span key={tag} className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs bg-primary/10 text-primary border border-primary/20">
-                                          {tag}
-                                          <button onClick={() => toggleTag(tag)} className="hover:text-primary"><X size={10}/></button>
-                                      </span>
-                                  ))}
-                                  {formData.tags.length === 0 && <span className="text-xs text-textMuted italic">No tags selected</span>}
+                      <section>
+                          <SectionHeader title="Entry & Risk" />
+                          <div className="bg-surfaceHighlight/10 border border-border/40 rounded-lg p-4 space-y-4">
+                              <div className="grid grid-cols-2 gap-4">
+                                  <InputGroup label="Lot Size">
+                                      <MinimalInput 
+                                        type="number" 
+                                        step="any"
+                                        value={formData.quantity} 
+                                        onChange={(e) => handleChange('quantity', e.target.value)} 
+                                      />
+                                  </InputGroup>
+                                  <InputGroup label="Risk %">
+                                      <MinimalInput 
+                                        type="number" 
+                                        step="any"
+                                        value={formData.riskPercentage || ''} 
+                                        onChange={(e) => handleChange('riskPercentage', e.target.value)} 
+                                      />
+                                  </InputGroup>
                               </div>
-
-                              {/* Groups Accordion */}
-                              <div className="border border-border/40 rounded-md divide-y divide-border/40">
-                                  {tagGroups.map((group) => {
-                                      const isExpanded = expandedTagGroup === group.name;
-                                      return (
-                                          <div key={group.name} className="bg-surface/30">
-                                              <button 
-                                                onClick={() => setExpandedTagGroup(isExpanded ? null : group.name)}
-                                                className="w-full flex justify-between items-center p-2 text-xs font-medium text-textMain hover:bg-surfaceHighlight/30 transition-colors"
-                                              >
-                                                  {group.name}
-                                                  {isExpanded ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
-                                              </button>
-                                              
-                                              {isExpanded && (
-                                                  <div className="p-2 flex flex-wrap gap-2 bg-background/50">
-                                                      {group.tags.map(tag => {
-                                                          const isSelected = formData.tags.includes(tag);
-                                                          return (
-                                                              <button
-                                                                key={tag}
-                                                                onClick={() => toggleTag(tag)}
-                                                                className={`px-2 py-1 rounded text-[10px] border transition-all ${
-                                                                    isSelected 
-                                                                    ? 'bg-primary text-white border-primary' 
-                                                                    : 'bg-surface border-border/50 text-textMuted hover:border-primary/50'
-                                                                }`}
-                                                              >
-                                                                  {tag}
-                                                              </button>
-                                                          )
-                                                      })}
-                                                  </div>
-                                              )}
-                                          </div>
-                                      )
-                                  })}
+                              <div className="grid grid-cols-2 gap-4">
+                                  <InputGroup label="Entry Price">
+                                      <MinimalInput 
+                                        type="number" 
+                                        step="any"
+                                        value={formData.entryPrice} 
+                                        onChange={(e) => handleChange('entryPrice', e.target.value)} 
+                                      />
+                                  </InputGroup>
+                                  <InputGroup label="Entry Time">
+                                      <input 
+                                          type="datetime-local" 
+                                          value={getInputValue(formData.entryDate)}
+                                          onChange={(e) => handleDateTimeChange('entry', e.target.value)}
+                                          className="w-full bg-transparent border border-border/40 rounded-md px-2 py-1.5 text-xs text-textMain focus:outline-none focus:border-primary"
+                                      />
+                                  </InputGroup>
+                              </div>
+                              <div className="grid grid-cols-2 gap-4">
+                                  <InputGroup label="Stop Loss">
+                                      <MinimalInput 
+                                        type="number" 
+                                        step="any"
+                                        value={formData.stopLoss} 
+                                        onChange={(e) => handleChange('stopLoss', e.target.value)} 
+                                      />
+                                      {slPips && <span className="text-[10px] text-textMuted ml-1">{slPips} pips</span>}
+                                  </InputGroup>
+                                  <InputGroup label="Take Profit">
+                                      <MinimalInput 
+                                        type="number" 
+                                        step="any"
+                                        value={formData.takeProfit} 
+                                        onChange={(e) => handleChange('takeProfit', e.target.value)} 
+                                      />
+                                      {tpPips && <span className="text-[10px] text-textMuted ml-1">{tpPips} pips</span>}
+                                  </InputGroup>
                               </div>
                           </div>
-                      </div>
+                      </section>
+                  </div>
+
+                  {/* Exit & Outcome Column */}
+                  <div className="space-y-6">
+                      <section>
+                          <div className="flex justify-between items-center mb-3">
+                              <SectionHeader title="Outcome" />
+                              <div className="flex gap-2">
+                                  {isMissed ? (
+                                      <button 
+                                        onClick={() => setIsReopenModalOpen(true)} // Reopen missed logic same as reopen closed
+                                        className="text-[10px] bg-surfaceHighlight hover:bg-border px-2 py-1 rounded text-textMain border border-border"
+                                      >
+                                          Activate Trade
+                                      </button>
+                                  ) : isClosed ? (
+                                      <button 
+                                        onClick={() => setIsReopenModalOpen(true)}
+                                        className="text-[10px] bg-surfaceHighlight hover:bg-border px-2 py-1 rounded text-textMain border border-border"
+                                      >
+                                          Reopen Trade
+                                      </button>
+                                  ) : (
+                                      <>
+                                        <button 
+                                            onClick={() => setIsCloseModalOpen(true)}
+                                            className="text-[10px] bg-primary hover:bg-blue-600 text-white px-2 py-1 rounded shadow-sm"
+                                        >
+                                            Close Trade
+                                        </button>
+                                        <button 
+                                            onClick={() => setIsMissedModalOpen(true)}
+                                            className="text-[10px] bg-surfaceHighlight hover:bg-border px-2 py-1 rounded text-textMuted border border-border"
+                                        >
+                                            Mark Missed
+                                        </button>
+                                      </>
+                                  )}
+                              </div>
+                          </div>
+                          
+                          <div className={`bg-surfaceHighlight/10 border border-border/40 rounded-lg p-4 space-y-4 ${isClosed || isMissed ? '' : 'opacity-50 pointer-events-none'}`}>
+                              <div className="grid grid-cols-2 gap-4">
+                                  <InputGroup label="Exit Price">
+                                      <MinimalInput 
+                                        type="number" 
+                                        step="any"
+                                        value={formData.exitPrice} 
+                                        onChange={(e) => handleChange('exitPrice', e.target.value)} 
+                                        disabled={!isClosed}
+                                      />
+                                  </InputGroup>
+                                  <InputGroup label="Exit Time">
+                                      <input 
+                                          type="datetime-local" 
+                                          value={getInputValue(formData.exitDate)}
+                                          onChange={(e) => handleDateTimeChange('exit', e.target.value)}
+                                          className="w-full bg-transparent border border-border/40 rounded-md px-2 py-1.5 text-xs text-textMain focus:outline-none focus:border-primary disabled:opacity-50"
+                                          disabled={!isClosed}
+                                      />
+                                  </InputGroup>
+                              </div>
+                              <InputGroup label="Core P&L">
+                                  <div className="relative">
+                                      <span className="absolute left-2 top-1/2 -translate-y-1/2 text-textMuted text-xs">$</span>
+                                      <MinimalInput 
+                                        type="number" 
+                                        step="any"
+                                        value={formData.mainPnl} 
+                                        onChange={(e) => handleChange('mainPnl', e.target.value)} 
+                                        className="pl-5 font-bold"
+                                        disabled={!isClosed}
+                                      />
+                                  </div>
+                              </InputGroup>
+                          </div>
+                      </section>
+                  </div>
+              </div>
+
+              {/* Partials Table */}
+              <section>
+                  <div className="flex justify-between items-center mb-3">
+                      <SectionHeader title="Partials" />
+                  </div>
+                  <div className="bg-surface border border-border/40 rounded-lg overflow-hidden">
+                      <table className="w-full text-left text-xs">
+                          <thead className="bg-surfaceHighlight/50 text-textMuted font-medium border-b border-border/40">
+                              <tr>
+                                  <th className="p-3">Date</th>
+                                  <th className="p-3">Lot</th>
+                                  <th className="p-3">Price</th>
+                                  <th className="p-3 text-right">P&L</th>
+                                  <th className="p-3 w-8"></th>
+                              </tr>
+                          </thead>
+                          <tbody className="divide-y divide-border/30">
+                              {formData.partials.map((p: TradePartial) => (
+                                  <tr key={p.id} className="group hover:bg-surfaceHighlight/20">
+                                      <td className="p-3 text-textMuted">{p.date ? new Date(p.date).toLocaleDateString() : '-'}</td>
+                                      <td className="p-3 font-mono">{p.quantity}</td>
+                                      <td className="p-3 font-mono">{p.price || '-'}</td>
+                                      <td className={`p-3 text-right font-bold ${p.pnl >= 0 ? 'text-profit' : 'text-loss'}`}>${p.pnl.toFixed(2)}</td>
+                                      <td className="p-3 text-center">
+                                          <button onClick={() => handleRemovePartial(p.id)} className="text-textMuted hover:text-loss opacity-0 group-hover:opacity-100 transition-opacity"><X size={12}/></button>
+                                      </td>
+                                  </tr>
+                              ))}
+                              {/* Add Row */}
+                              <tr className="bg-surfaceHighlight/5">
+                                  <td className="p-2">
+                                      <input 
+                                        type="datetime-local" 
+                                        value={newPartial.dateTime} 
+                                        onChange={(e) => setNewPartial({...newPartial, dateTime: e.target.value})}
+                                        className="w-full bg-transparent border-b border-border/30 text-xs text-textMain focus:outline-none"
+                                      />
+                                  </td>
+                                  <td className="p-2"><MinimalInput placeholder="Lot" value={newPartial.lot} onChange={(e) => setNewPartial({...newPartial, lot: e.target.value})} className="h-7 text-xs"/></td>
+                                  <td className="p-2"><MinimalInput placeholder="Price" value={newPartial.price} onChange={(e) => setNewPartial({...newPartial, price: e.target.value})} className="h-7 text-xs"/></td>
+                                  <td className="p-2"><MinimalInput placeholder="P&L" value={newPartial.pnl} onChange={(e) => setNewPartial({...newPartial, pnl: e.target.value})} className="h-7 text-xs text-right"/></td>
+                                  <td className="p-2 text-center">
+                                      <button onClick={handleAddPartial} disabled={!newPartial.lot || !newPartial.pnl} className="text-primary hover:text-blue-600 disabled:opacity-30"><Plus size={14}/></button>
+                                  </td>
+                              </tr>
+                          </tbody>
+                      </table>
                   </div>
               </section>
 
-              {/* Gallery */}
+              {/* Notes */}
+              <section className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                  <div>
+                      <SectionHeader title="Technical Notes" />
+                      <textarea 
+                          value={formData.notes}
+                          onChange={(e) => handleChange('notes', e.target.value)}
+                          className="w-full bg-surface border border-border/40 rounded-lg p-3 text-sm text-textMain focus:outline-none focus:border-primary resize-none min-h-[120px]"
+                          placeholder="Analysis, setup details..."
+                      />
+                  </div>
+                  <div>
+                      <SectionHeader title="Emotional Notes" />
+                      <textarea 
+                          value={formData.emotionalNotes}
+                          onChange={(e) => handleChange('emotionalNotes', e.target.value)}
+                          className="w-full bg-surface border border-border/40 rounded-lg p-3 text-sm text-textMain focus:outline-none focus:border-primary resize-none min-h-[120px]"
+                          placeholder="How did you feel?"
+                      />
+                  </div>
+              </section>
+
+              {/* Screenshots */}
               <section>
-                  <div className="flex justify-between items-end mb-4 border-b border-border/50 pb-2">
-                      <SectionHeader title="Media" />
-                      <div className="flex items-center gap-2">
-                          <button 
-                            type="button"
-                            onClick={handlePasteClick}
-                            className="text-xs text-textMuted hover:text-textMain flex items-center gap-1"
-                            title="Paste from Clipboard"
-                          >
-                             <Clipboard size={12} />
-                          </button>
-                          <button onClick={() => fileInputRef.current?.click()} className="text-xs text-primary hover:underline flex items-center gap-1">
-                              <Upload size={12} /> Upload
-                          </button>
+                  <div className="flex justify-between items-center mb-3">
+                      <SectionHeader title="Screenshots" />
+                      <div className="flex gap-2">
                           <input type="file" ref={fileInputRef} className="hidden" accept="image/*" onChange={handleFileUpload} />
+                          <button onClick={() => fileInputRef.current?.click()} className="text-[10px] flex items-center gap-1 bg-surfaceHighlight hover:bg-border px-2 py-1 rounded text-textMuted border border-border transition-colors"><Upload size={10}/> Upload</button>
+                          <button onClick={handlePasteClick} className="text-[10px] flex items-center gap-1 bg-surfaceHighlight hover:bg-border px-2 py-1 rounded text-textMuted border border-border transition-colors"><Clipboard size={10}/> Paste</button>
                       </div>
                   </div>
                   
-                  <div className="grid grid-cols-3 gap-2">
-                      {formData.screenshots.map((url: string, idx: number) => (
-                          <div 
-                            key={idx} 
-                            onClick={() => setSelectedImage(url)}
-                            className="aspect-square bg-surface border border-border/40 rounded-lg overflow-hidden cursor-pointer relative group"
-                          >
-                             <img src={url} alt="Trade Screenshot" className="w-full h-full object-cover transition-transform group-hover:scale-105" />
-                             <button 
-                                onClick={(e) => { e.stopPropagation(); handleRemoveImage(idx); }} 
-                                className="absolute top-1 right-1 bg-black/50 hover:bg-red-600 text-white p-1 rounded-full opacity-0 group-hover:opacity-100 transition-opacity"
-                             >
-                                <X size={12} />
-                             </button>
-                          </div>
-                      ))}
-                  </div>
+                  {formData.screenshots.length > 0 ? (
+                      <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3">
+                          {formData.screenshots.map((url: string, idx: number) => (
+                              <div key={idx} className="relative group aspect-video bg-black/50 rounded-lg overflow-hidden border border-border cursor-pointer" onClick={() => setSelectedImage(url)}>
+                                  <img src={url} alt={`Screenshot ${idx}`} className="w-full h-full object-cover" />
+                                  <button 
+                                    onClick={(e) => { e.stopPropagation(); handleRemoveImage(idx); }}
+                                    className="absolute top-1 right-1 bg-black/60 hover:bg-red-600 text-white p-1 rounded-full opacity-0 group-hover:opacity-100 transition-opacity"
+                                  >
+                                      <Trash2 size={10} />
+                                  </button>
+                              </div>
+                          ))}
+                      </div>
+                  ) : (
+                      <div className="border border-dashed border-border rounded-lg p-6 text-center">
+                          <p className="text-xs text-textMuted">No screenshots yet.</p>
+                      </div>
+                  )}
               </section>
           </div>
       </div>
 
-      {/* Image Modal */}
-      {selectedImage && (
-        <div 
-          className="fixed inset-0 bg-black/90 flex items-center justify-center z-50 p-4 animate-in fade-in"
-          onClick={() => setSelectedImage(null)}
-        >
-          <div className="relative max-w-full max-h-full">
-            <button 
-              onClick={() => setSelectedImage(null)}
-              className="absolute -top-10 right-0 text-white hover:text-gray-300 transition-colors"
-            >
-              <X size={24} />
-            </button>
-            <img src={selectedImage} alt="Full size" className="max-w-full max-h-[90vh] object-contain rounded-lg shadow-2xl" />
-          </div>
-        </div>
-      )}
-
-      {/* Close Trade Modal */}
       {isCloseModalOpen && (
           <CloseTradeModal 
             currentData={formData}
@@ -1106,22 +964,32 @@ const TradeDetail: React.FC<TradeDetailProps> = ({ trade, accounts, tagGroups, s
           />
       )}
 
-      {/* Reopen Confirmation Modal */}
+      {selectedImage && (
+        <div 
+          className="fixed inset-0 bg-black/95 flex items-center justify-center z-[70] p-4 animate-in fade-in"
+          onClick={() => setSelectedImage(null)}
+        >
+          <div className="relative max-w-full max-h-full">
+            <button className="absolute -top-12 right-0 text-white p-2"><X size={24} /></button>
+            <img src={selectedImage} alt="Full" className="max-w-full max-h-[90vh] object-contain rounded-lg" />
+          </div>
+        </div>
+      )}
+
       <ConfirmModal 
-          isOpen={isReopenModalOpen}
-          title="Reopen Trade"
-          message="Are you sure to reopen the closed trade? This will revert any balance changes made by closing this trade."
-          onConfirm={handleConfirmReopen}
-          onCancel={() => setIsReopenModalOpen(false)}
+          isOpen={isReopenModalOpen} 
+          title="Reopen Trade?" 
+          message="This will reset the trade status to OPEN. If balance was updated, it will be reversed." 
+          onConfirm={handleConfirmReopen} 
+          onCancel={() => setIsReopenModalOpen(false)} 
       />
 
-      {/* Missed Confirmation Modal */}
       <ConfirmModal 
-          isOpen={isMissedModalOpen}
-          title="Mark as Missed"
-          message="Are you sure to change the trade outcome to missed? You will loose all of your partial trades, if any. This will revert any balance changes."
-          onConfirm={handleConfirmMissed}
-          onCancel={() => setIsMissedModalOpen(false)}
+          isOpen={isMissedModalOpen} 
+          title="Mark as Missed?" 
+          message="This will set the trade status to MISSED. PnL will be 0." 
+          onConfirm={handleConfirmMissed} 
+          onCancel={() => setIsMissedModalOpen(false)} 
       />
     </div>
   );

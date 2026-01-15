@@ -82,7 +82,7 @@ app.use(async (req, res, next) => {
 // --- Auto-Migration Helper ---
 const ensureSchema = async (db) => {
     try {
-        // 1. Base Tables - Create users first as accounts depend on it
+        // 1. Create Users Table
         await db.query(`
             CREATE TABLE IF NOT EXISTS users (
                 id VARCHAR(255) PRIMARY KEY,
@@ -93,7 +93,7 @@ const ensureSchema = async (db) => {
             );
         `);
 
-        // 2. Ensure Start User Exists immediately after creating table
+        // 2. Ensure Start User Exists
         const userCheck = await db.query("SELECT * FROM users WHERE id = 'start_user'");
         if (userCheck.rows.length === 0) {
             await db.query(`
@@ -102,7 +102,7 @@ const ensureSchema = async (db) => {
             `);
         }
 
-        // 3. Create/Update Accounts Table
+        // 3. Create Accounts Table
         await db.query(`
             CREATE TABLE IF NOT EXISTS accounts (
                 id VARCHAR(255) PRIMARY KEY,
@@ -114,17 +114,17 @@ const ensureSchema = async (db) => {
             );
         `);
 
-        // 4. Add user_id column to accounts if missing (Migration Step)
+        // 4. Safer Migration for user_id column
         try {
-            await db.query(`ALTER TABLE accounts ADD COLUMN IF NOT EXISTS user_id VARCHAR(255) REFERENCES users(id) ON DELETE CASCADE`);
+            await db.query(`ALTER TABLE accounts ADD COLUMN user_id VARCHAR(255)`);
         } catch (e) {
-            console.log("Migration Note: user_id column check/add:", e.message);
+            // Ignore "column already exists" error
         }
 
         // 5. Link orphan accounts to Start User
         await db.query("UPDATE accounts SET user_id = 'start_user' WHERE user_id IS NULL");
 
-        // 6. Other Tables
+        // 6. Create Other Tables
         await db.query(`
             CREATE TABLE IF NOT EXISTS app_settings (key VARCHAR(255) PRIMARY KEY, value JSONB);
             CREATE TABLE IF NOT EXISTS monthly_notes (
@@ -160,7 +160,7 @@ const ensureSchema = async (db) => {
             try {
                 await db.query(`ALTER TABLE trades ADD COLUMN IF NOT EXISTS ${colDef}`);
             } catch (e) {
-                // Ignore errors if column exists or type conflicts
+                // Ignore errors
             }
         }
     } catch (err) {
@@ -181,7 +181,6 @@ app.get('/api/users', async (req, res) => {
         const result = await req.db.query('SELECT * FROM users ORDER BY created_at ASC');
         res.json(result.rows.map(toCamelCase));
     } catch (err) {
-        // Run migration if table missing
         if (err.code === '42P01') { await ensureSchema(req.db); return res.json([]); }
         res.status(500).json({ error: err.message });
     }
@@ -244,7 +243,6 @@ app.post('/api/settings', async (req, res) => {
 app.get('/api/accounts', async (req, res) => {
     const userId = req.query.userId;
     try {
-        // If user_id column doesn't exist, this throws error. We catch it and migrate.
         let query = 'SELECT * FROM accounts';
         const params = [];
         if (userId) {
@@ -264,7 +262,6 @@ app.get('/api/accounts', async (req, res) => {
             type: row.type
         })));
     } catch (err) {
-        // 42P01 (Undefined table) or 42703 (Undefined column) triggers schema ensure
         if (err.code === '42P01' || err.code === '42703') { await ensureSchema(req.db); return res.json([]); }
         res.status(500).json({ error: err.message });
     }

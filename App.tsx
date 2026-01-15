@@ -147,7 +147,6 @@ function App() {
       setAccounts(userAccounts);
       // Determine selected account
       if (userAccounts.length > 0) {
-          // Check if previously selected account belongs to this user
           const savedAccountId = localStorage.getItem(`pipsuite_selected_account_${userId}`);
           if (savedAccountId && userAccounts.some(a => a.id === savedAccountId)) {
               setSelectedAccountId(savedAccountId);
@@ -171,7 +170,6 @@ function App() {
       }
   };
 
-  // Handle User Creation/Edit
   const handleUserSave = async (userData: Partial<User>) => {
       try {
           const userToSave: User = {
@@ -182,13 +180,10 @@ function App() {
           };
 
           const savedUser = await saveUser(userToSave);
-          
-          // Refresh user list
           const updatedUsers = await getUsers();
           setUsers(updatedUsers);
 
           if (!editingUser) {
-              // If new user, create default account
               const defaultAccount: Account = {
                   id: `acc_${Date.now()}_first`,
                   userId: userToSave.id,
@@ -199,13 +194,10 @@ function App() {
                   type: 'Real'
               };
               await saveAccount(defaultAccount);
-              
-              // Switch to new user
               await handleSwitchUser(userToSave.id, updatedUsers);
           } else {
-              // Update current user state if we edited the current user
               if (currentUser?.id === userToSave.id) {
-                  setCurrentUser(userToSave); // Update keys in state
+                  setCurrentUser(userToSave); 
               }
           }
       } catch (e) {
@@ -227,7 +219,6 @@ function App() {
           setUsers(updatedUsers);
           
           if (currentUser?.id === userId) {
-              // Switch to the first available user
               await handleSwitchUser(updatedUsers[0].id, updatedUsers);
           }
       } catch (e) {
@@ -480,6 +471,7 @@ function App() {
         }
     } catch (e) {
         alert("Failed to save trade.");
+        throw e; // Rethrow to let caller know it failed
     }
   };
 
@@ -761,8 +753,14 @@ function App() {
       setIsViewModalOpen(false);
       setSubView('detail');
   };
-  const handleQuickAdd = (e: React.FormEvent) => {
+  const handleQuickAdd = async (e: React.FormEvent) => {
       e.preventDefault();
+      
+      if (!selectedAccountId) {
+          alert("Please select an account first.");
+          return;
+      }
+
       const entryPrice = parseFloat(newTradeForm.entryPrice);
       
       const newTrade: Trade = {
@@ -784,8 +782,14 @@ function App() {
           notes: newTradeForm.notes || ''
       };
 
-      handleSaveTrade(newTrade);
-      handleClearForm();
+      try {
+          // Await the save process. If it fails, catch block triggers and form is NOT cleared.
+          await handleSaveTrade(newTrade, false); 
+          handleClearForm(); // Only clear if successful
+          setIsAddModalOpen(false); // Close modal on success
+      } catch (err) {
+          // Error already alerted in handleSaveTrade, form remains dirty for retry
+      }
   };
   
   const toggleTheme = () => {
@@ -1062,7 +1066,7 @@ function App() {
           />
       )}
 
-      {/* Add Trade Modal (Simplified for view) */}
+      {/* Add Trade Modal (Restored from previous version) */}
       {isAddModalOpen && (
         <div 
             className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 p-4 backdrop-blur-sm animate-in fade-in"
@@ -1072,7 +1076,6 @@ function App() {
             className="bg-surface border border-border rounded-xl w-full max-w-lg shadow-2xl flex flex-col max-h-[90vh]"
             onClick={(e) => e.stopPropagation()}
           >
-             {/* ... Modal content similar to previous App.tsx ... */}
              <div className="p-5 border-b border-border flex justify-between items-center shrink-0">
               <h3 className="text-lg font-bold">Add Trade</h3>
               <div className="flex items-center gap-3">
@@ -1128,8 +1131,6 @@ function App() {
 
             <div className="flex-1 overflow-y-auto">
               <form id="add-trade-form" onSubmit={handleQuickAdd} className="p-5 pt-4 space-y-4">
-                  {/* ... Form fields (Asset, Price, Entry, SL, TP, etc) ... */}
-                  {/* ... Including Screenshot section, Notes & Tags ... */}
                   <div className="grid grid-cols-2 gap-4">
                     <div>
                       <label className="block text-xs font-medium text-textMuted mb-1">Asset Pair</label>
@@ -1229,7 +1230,6 @@ function App() {
                     </div>
                   </div>
                   
-                  {/* Screenshots & Notes Section reused */}
                   <div className="bg-surface border border-border rounded-lg p-2 mt-2">
                       <h4 className="text-[10px] font-bold mb-1.5 flex justify-between items-center text-textMuted uppercase tracking-wider">
                           Screenshots <span className="text-[9px] bg-surfaceHighlight px-1.5 py-0.5 rounded text-textMuted">Ctrl+V</span>

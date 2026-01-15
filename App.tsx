@@ -16,7 +16,7 @@ import { getTrades, saveTrade, deleteTrades, getAccounts, saveAccount, deleteAcc
 import { fetchCurrentPrice, PriceResult } from './services/priceService';
 import { extractTradeParamsFromImage } from './services/geminiService';
 import { Trade, TradeStats, Account, TradeType, TradeStatus, ASSETS, TagGroup, OrderType, Session, TradeOutcome, User } from './types';
-import { X, ChevronDown, Calculator, TrendingUp, TrendingDown, RefreshCw, Loader2, Upload, Plus, Trash2, Clipboard, ChevronUp, Eraser } from 'lucide-react';
+import { X, ChevronDown, Calculator, TrendingUp, TrendingDown, RefreshCw, Loader2, Upload, Plus, Trash2, Clipboard, ChevronUp, Eraser, Check, User as UserIcon } from 'lucide-react';
 import UserModal from './components/UserModal';
 
 function App() {
@@ -139,8 +139,7 @@ function App() {
       // Load User Scoped Data
       const [userAccounts, userTrades, userTags, userStrategies] = await Promise.all([
           getAccounts(userId),
-          getTrades(), // Trades have accountId, account belongs to User. We filter in memory or backend.
-                       // Optimization: We could filter trades by user's accounts on backend, but let's filter in memory for now.
+          getTrades(), 
           getTagGroups(userId),
           getStrategies(userId)
       ]);
@@ -853,25 +852,75 @@ function App() {
         );
       case 'settings':
         return (
-          <div className="p-8 max-w-2xl mx-auto space-y-8 animate-in fade-in duration-500">
+          <div className="p-8 max-w-3xl mx-auto space-y-8 animate-in fade-in duration-500">
             <div className="flex justify-between items-center">
                 <h2 className="text-xl font-bold">Settings</h2>
             </div>
             
+            {/* User Management Section */}
             <div className="bg-surface border border-border rounded-xl p-6 shadow-sm space-y-6">
-               <div className="flex justify-between items-center mb-2">
-                  <h3 className="font-semibold">User Profile</h3>
-                  <button onClick={() => { setEditingUser(currentUser); setIsUserModalOpen(true); }} className="text-primary text-sm hover:underline">Edit</button>
+               <div className="flex justify-between items-center pb-2 border-b border-border/50">
+                  <h3 className="font-semibold flex items-center gap-2">
+                      <UserIcon size={18} className="text-primary" /> User Management
+                  </h3>
+                  <button 
+                    onClick={() => { setEditingUser(null); setIsUserModalOpen(true); }}
+                    className="text-xs bg-primary hover:bg-blue-600 text-white px-3 py-1.5 rounded-lg transition-colors font-bold flex items-center gap-1"
+                  >
+                      <Plus size={14} /> Add User
+                  </button>
                </div>
-               {currentUser ? (
-                   <div className="space-y-1">
-                       <p className="text-sm"><span className="text-textMuted">Name:</span> {currentUser.name}</p>
-                       <p className="text-sm"><span className="text-textMuted">Gemini Key:</span> {currentUser.geminiApiKey ? '••••••••' : 'Not Set'}</p>
-                       <p className="text-sm"><span className="text-textMuted">Twelve Data Key:</span> {currentUser.twelveDataApiKey ? '••••••••' : 'Not Set'}</p>
-                   </div>
-               ) : (
-                   <p className="text-sm text-textMuted italic">No profile selected.</p>
-               )}
+               
+               <div className="space-y-2">
+                   {users.map(u => {
+                       const isCurrent = currentUser?.id === u.id;
+                       return (
+                           <div key={u.id} className={`flex items-center justify-between p-3 rounded-lg border transition-all ${isCurrent ? 'bg-primary/5 border-primary/30' : 'bg-background border-border hover:border-primary/20'}`}>
+                               <div className="flex items-center gap-3">
+                                   <div className={`w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold ${isCurrent ? 'bg-primary text-white' : 'bg-surfaceHighlight text-textMuted'}`}>
+                                       {u.name.charAt(0).toUpperCase()}
+                                   </div>
+                                   <div>
+                                       <p className={`text-sm font-medium ${isCurrent ? 'text-primary' : 'text-textMain'}`}>
+                                           {u.name} {isCurrent && <span className="text-[10px] bg-primary/10 px-1.5 py-0.5 rounded ml-2">Active</span>}
+                                       </p>
+                                       <div className="flex gap-3 text-[10px] text-textMuted mt-0.5">
+                                           <span>Gemini: {u.geminiApiKey ? '••••' : 'Missing'}</span>
+                                           <span>12Data: {u.twelveDataApiKey ? '••••' : 'Missing'}</span>
+                                       </div>
+                                   </div>
+                               </div>
+                               
+                               <div className="flex items-center gap-2">
+                                   {!isCurrent && (
+                                       <button 
+                                            onClick={() => handleSwitchUser(u.id, users)}
+                                            className="p-1.5 text-textMuted hover:text-primary hover:bg-primary/10 rounded transition-colors text-xs font-medium"
+                                       >
+                                           Select
+                                       </button>
+                                   )}
+                                   <button 
+                                        onClick={() => { setEditingUser(u); setIsUserModalOpen(true); }}
+                                        className="p-1.5 text-textMuted hover:text-textMain hover:bg-surfaceHighlight rounded transition-colors"
+                                        title="Edit User"
+                                   >
+                                       <Eraser size={14} />
+                                   </button>
+                                   {!isCurrent && (
+                                       <button 
+                                            onClick={() => handleUserDelete(u.id)}
+                                            className="p-1.5 text-textMuted hover:text-loss hover:bg-loss/10 rounded transition-colors"
+                                            title="Delete User"
+                                       >
+                                           <Trash2 size={14} />
+                                       </button>
+                                   )}
+                               </div>
+                           </div>
+                       );
+                   })}
+               </div>
             </div>
 
             <div className="bg-surface border border-border rounded-xl p-6 shadow-sm">

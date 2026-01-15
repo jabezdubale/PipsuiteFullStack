@@ -1,4 +1,3 @@
-
 import React, { useState, useRef, useEffect } from 'react';
 import { 
   LayoutDashboard, 
@@ -15,10 +14,7 @@ import {
   ChevronRight,
   CandlestickChart,
   Wallet,
-  Trash2,
-  User as UserIcon,
-  LogOut,
-  Users
+  Trash2
 } from 'lucide-react';
 import { Account, User } from '../types';
 import BalanceAdjustmentModal from './BalanceAdjustmentModal';
@@ -62,11 +58,7 @@ const Layout: React.FC<LayoutProps> = ({
   setStartDate,
   endDate,
   setEndDate,
-  users,
-  currentUser,
-  onSwitchUser,
-  onCreateUser,
-  onDeleteUser
+  currentUser
 }) => {
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
@@ -94,9 +86,9 @@ const Layout: React.FC<LayoutProps> = ({
     { id: 'settings', label: 'Settings', icon: Settings },
   ];
 
-  const handleDeleteUserClick = (userId: string, e: React.MouseEvent) => {
-      e.stopPropagation();
-      onDeleteUser(userId);
+  const handleSettingsClick = () => {
+      setActiveTab('settings');
+      setIsUserDropdownOpen(false);
   };
 
   return (
@@ -262,49 +254,22 @@ const Layout: React.FC<LayoutProps> = ({
                  </button>
 
                  {isUserDropdownOpen && (
-                     <div className="absolute right-0 top-full mt-2 w-56 bg-surface border border-border rounded-xl shadow-2xl z-50 animate-in fade-in zoom-in-95 overflow-hidden">
-                         <div className="p-3 border-b border-border bg-surfaceHighlight/30">
-                             <p className="text-xs font-bold text-textMain">Switch User</p>
+                     <div className="absolute right-0 top-full mt-2 w-48 bg-surface border border-border rounded-xl shadow-2xl z-50 animate-in fade-in zoom-in-95 overflow-hidden">
+                         <div className="p-3 border-b border-border bg-surfaceHighlight/30 flex items-center gap-2">
+                             <div className="w-6 h-6 bg-primary rounded-full flex items-center justify-center text-white text-[10px] font-bold">
+                                 {currentUser?.name.charAt(0).toUpperCase() || 'U'}
+                             </div>
+                             <div className="overflow-hidden">
+                                 <p className="text-xs font-bold text-textMain truncate">{currentUser?.name}</p>
+                                 <p className="text-[9px] text-textMuted truncate">Logged in</p>
+                             </div>
                          </div>
-                         <div className="max-h-60 overflow-y-auto">
-                             {users.map(u => (
-                                 <button
-                                    key={u.id}
-                                    onClick={() => {
-                                        onSwitchUser(u.id);
-                                        setIsUserDropdownOpen(false);
-                                    }}
-                                    className={`w-full flex items-center justify-between p-3 text-left hover:bg-surfaceHighlight transition-colors ${currentUser?.id === u.id ? 'bg-primary/5' : ''}`}
-                                 >
-                                     <div className="flex items-center gap-2">
-                                         <div className={`w-5 h-5 rounded-full flex items-center justify-center text-[9px] font-bold ${currentUser?.id === u.id ? 'bg-primary text-white' : 'bg-surfaceHighlight text-textMuted'}`}>
-                                             {u.name.charAt(0).toUpperCase()}
-                                         </div>
-                                         <span className={`text-xs ${currentUser?.id === u.id ? 'font-bold text-primary' : 'text-textMain'}`}>
-                                             {u.name}
-                                         </span>
-                                     </div>
-                                     {currentUser?.id !== u.id && (
-                                         <div 
-                                            onClick={(e) => handleDeleteUserClick(u.id, e)}
-                                            className="p-1 text-textMuted hover:text-loss hover:bg-loss/10 rounded transition-colors"
-                                            title="Delete User"
-                                         >
-                                             <Trash2 size={12} />
-                                         </div>
-                                     )}
-                                 </button>
-                             ))}
-                         </div>
-                         <div className="p-2 border-t border-border">
+                         <div className="p-1">
                              <button 
-                                onClick={() => {
-                                    onCreateUser();
-                                    setIsUserDropdownOpen(false);
-                                }}
-                                className="w-full flex items-center justify-center gap-2 p-2 rounded-lg bg-surfaceHighlight hover:bg-border text-xs font-medium text-textMain transition-colors"
+                                onClick={handleSettingsClick}
+                                className="w-full flex items-center gap-2 p-2 rounded-lg hover:bg-surfaceHighlight text-xs font-medium text-textMain transition-colors text-left"
                              >
-                                 <Plus size={14} /> Add New User
+                                 <Settings size={14} /> Manage Users
                              </button>
                          </div>
                      </div>

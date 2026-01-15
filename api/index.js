@@ -82,7 +82,7 @@ app.use(async (req, res, next) => {
 // --- Auto-Migration Helper ---
 const ensureSchema = async (db) => {
     try {
-        // Base Tables
+        // 1. Base Tables - Create users first as accounts depend on it
         await db.query(`
             CREATE TABLE IF NOT EXISTS users (
                 id VARCHAR(255) PRIMARY KEY,
@@ -91,16 +91,42 @@ const ensureSchema = async (db) => {
                 twelve_data_api_key TEXT,
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             );
-            CREATE TABLE IF NOT EXISTS app_settings (key VARCHAR(255) PRIMARY KEY, value JSONB);
+        `);
+
+        // 2. Ensure Start User Exists immediately after creating table
+        const userCheck = await db.query("SELECT * FROM users WHERE id = 'start_user'");
+        if (userCheck.rows.length === 0) {
+            await db.query(`
+                INSERT INTO users (id, name, gemini_api_key, twelve_data_api_key) 
+                VALUES ('start_user', 'Start User', 'AIzaSyAM08mKrJmUn3lrBUtrNQFlw2i2g4z2BNY', '8367337fa06f44b38314f68e31c446b9')
+            `);
+        }
+
+        // 3. Create/Update Accounts Table
+        await db.query(`
             CREATE TABLE IF NOT EXISTS accounts (
                 id VARCHAR(255) PRIMARY KEY,
-                user_id VARCHAR(255) REFERENCES users(id) ON DELETE CASCADE,
                 name VARCHAR(255) NOT NULL,
                 currency VARCHAR(10) DEFAULT 'USD',
                 balance DECIMAL(20, 2) DEFAULT 0,
                 is_demo BOOLEAN DEFAULT false,
                 type VARCHAR(50) DEFAULT 'Real'
             );
+        `);
+
+        // 4. Add user_id column to accounts if missing (Migration Step)
+        try {
+            await db.query(`ALTER TABLE accounts ADD COLUMN IF NOT EXISTS user_id VARCHAR(255) REFERENCES users(id) ON DELETE CASCADE`);
+        } catch (e) {
+            console.log("Migration Note: user_id column check/add:", e.message);
+        }
+
+        // 5. Link orphan accounts to Start User
+        await db.query("UPDATE accounts SET user_id = 'start_user' WHERE user_id IS NULL");
+
+        // 6. Other Tables
+        await db.query(`
+            CREATE TABLE IF NOT EXISTS app_settings (key VARCHAR(255) PRIMARY KEY, value JSONB);
             CREATE TABLE IF NOT EXISTS monthly_notes (
                 month_key VARCHAR(20) PRIMARY KEY,
                 goals TEXT,
@@ -113,18 +139,7 @@ const ensureSchema = async (db) => {
             );
         `);
 
-        // Check if Default User exists, if not create one
-        const userCheck = await db.query("SELECT * FROM users WHERE id = 'start_user'");
-        if (userCheck.rows.length === 0) {
-            await db.query(`
-                INSERT INTO users (id, name, gemini_api_key, twelve_data_api_key) 
-                VALUES ('start_user', 'Start User', 'AIzaSyAM08mKrJmUn3lrBUtrNQFlw2i2g4z2BNY', '8367337fa06f44b38314f68e31c446b9')
-            `);
-            // Link existing accounts to this user if they have no user_id (Migration for existing data)
-            await db.query("UPDATE accounts SET user_id = 'start_user' WHERE user_id IS NULL");
-        }
-
-        // Add missing columns safely
+        // 7. Add missing columns to trades safely
         const columns = [
             "symbol VARCHAR(20)", "type VARCHAR(20)", "status VARCHAR(20)", "outcome VARCHAR(20)",
             "entry_price DECIMAL(20, 5)", "exit_price DECIMAL(20, 5)", 
@@ -166,6 +181,7 @@ app.get('/api/users', async (req, res) => {
         const result = await req.db.query('SELECT * FROM users ORDER BY created_at ASC');
         res.json(result.rows.map(toCamelCase));
     } catch (err) {
+        // Run migration if table missing
         if (err.code === '42P01') { await ensureSchema(req.db); return res.json([]); }
         res.status(500).json({ error: err.message });
     }
@@ -228,6 +244,7 @@ app.post('/api/settings', async (req, res) => {
 app.get('/api/accounts', async (req, res) => {
     const userId = req.query.userId;
     try {
+        // If user_id column doesn't exist, this throws error. We catch it and migrate.
         let query = 'SELECT * FROM accounts';
         const params = [];
         if (userId) {
@@ -247,7 +264,8 @@ app.get('/api/accounts', async (req, res) => {
             type: row.type
         })));
     } catch (err) {
-        if (err.code === '42P01') { await ensureSchema(req.db); return res.json([]); }
+        // 42P01 (Undefined table) or 42703 (Undefined column) triggers schema ensure
+        if (err.code === '42P01' || err.code === '42703') { await ensureSchema(req.db); return res.json([]); }
         res.status(500).json({ error: err.message });
     }
 });
@@ -263,7 +281,6 @@ app.post('/api/accounts', async (req, res) => {
              balance = EXCLUDED.balance, is_demo = EXCLUDED.is_demo, type = EXCLUDED.type`,
             [id, userId, name, currency, balance, isDemo, type]
         );
-        // Return only accounts for this user
         const result = await req.db.query('SELECT * FROM accounts WHERE user_id = $1 ORDER BY name ASC', [userId]);
         res.json(result.rows.map(row => ({
             id: row.id,
@@ -275,6 +292,7 @@ app.post('/api/accounts', async (req, res) => {
             type: row.type
         })));
     } catch (err) {
+        if (err.code === '42703') { await ensureSchema(req.db); return res.status(500).json({ error: "Schema updated. Retry." }); }
         res.status(500).json({ error: err.message });
     }
 });
@@ -336,7 +354,6 @@ app.post('/api/trades', async (req, res) => {
     } catch (err) {
         if (err.code === '42703' || err.code === '42P01') { 
             await ensureSchema(req.db);
-            // Retry logic omitted for brevity, handled by frontend refresh/retry or simple fail
             return res.status(500).json({ error: "Schema updated. Please retry." });
         }
         res.status(500).json({ error: err.message });
@@ -422,7 +439,6 @@ app.get('/api/tags', async (req, res) => {
     try {
         const key = userId ? `tag_groups_${userId}` : 'tag_groups';
         const result = await req.db.query("SELECT value FROM app_settings WHERE key = $1", [key]);
-        // If user specific not found, return empty (frontend will handle default fallback)
         res.json(result.rows.length > 0 ? result.rows[0].value : null);
     } catch (err) {
         if (err.code === '42P01') { await ensureSchema(req.db); return res.json(null); }

@@ -3,17 +3,48 @@ import { Trade, Account, TagGroup, MonthlyNoteData, User } from '../types';
 
 const API_BASE = '/api';
 
-// --- Helper for fetch ---
+// In-Memory Cache for static data
+const CACHE: {
+    tagGroups: Record<string, TagGroup[]> | null;
+    strategies: Record<string, string[]> | null;
+} = {
+    tagGroups: null,
+    strategies: null
+};
+
+// --- Helper for fetch with Retry ---
+const fetchWithRetry = async (url: string, options?: RequestInit, retries = 3, backoff = 500): Promise<Response> => {
+    try {
+        const response = await fetch(url, options);
+        if (!response.ok) {
+            // Throw to trigger catch block for 5xx errors or if we want to retry on 429 etc.
+            // For 4xx client errors (except maybe 429), we usually don't want to retry.
+            if (response.status >= 500 || response.status === 429) {
+                throw new Error(response.statusText);
+            }
+        }
+        return response;
+    } catch (err) {
+        if (retries > 0) {
+            await new Promise(resolve => setTimeout(resolve, backoff));
+            return fetchWithRetry(url, options, retries - 1, backoff * 2);
+        }
+        throw err;
+    }
+};
+
 const api = async <T>(endpoint: string, options?: RequestInit): Promise<T> => {
-    const response = await fetch(`${API_BASE}${endpoint}`, {
+    const response = await fetchWithRetry(`${API_BASE}${endpoint}`, {
         headers: {
             'Content-Type': 'application/json',
         },
         ...options,
     });
+    
     if (!response.ok) {
         throw new Error(`API Error: ${response.statusText}`);
     }
+    
     const text = await response.text();
     try {
         return text ? JSON.parse(text) : null;
@@ -148,15 +179,10 @@ export const saveTrade = async (trade: Trade): Promise<Trade[]> => {
 
 // Atomic Close Transaction
 export const closeTrade = async (trade: Trade, affectBalance: boolean): Promise<Trade[]> => {
-    const result = await api<Trade[]>(`/trades/${trade.id}/close`, {
+    return await api<Trade[]>(`/trades/${trade.id}/close`, {
         method: 'POST',
         body: JSON.stringify({ trade, affectBalance })
     });
-    // This endpoint returns [updatedTrade]. We generally want to refresh full list or just merge.
-    // For compatibility with App.tsx which expects "all trades", we might need to handle this.
-    // BUT the Atomic Close only returns the single modified trade for efficiency.
-    // The calling code in App.tsx should handle merging or refetching.
-    return result; 
 };
 
 export const saveTrades = async (newTrades: Trade[]): Promise<Trade[]> => {
@@ -180,19 +206,35 @@ export const deleteTrades = async (ids: string[]): Promise<Trade[]> => {
 // --- Tag Management ---
 
 export const getTagGroups = async (userId?: string): Promise<TagGroup[]> => {
+    const cacheKey = userId || 'global';
+    
+    // Check Cache
+    if (CACHE.tagGroups && CACHE.tagGroups[cacheKey]) {
+        return CACHE.tagGroups[cacheKey];
+    }
+
     try {
         const query = userId ? `?userId=${userId}` : '';
         const groups = await api<TagGroup[]>(`/tags${query}`);
-        if (!groups || groups.length === 0) {
-            return DEFAULT_TAG_GROUPS;
-        }
-        return groups;
+        const finalGroups = (!groups || groups.length === 0) ? DEFAULT_TAG_GROUPS : groups;
+        
+        // Update Cache
+        if (!CACHE.tagGroups) CACHE.tagGroups = {};
+        CACHE.tagGroups[cacheKey] = finalGroups;
+        
+        return finalGroups;
     } catch (e) {
         return DEFAULT_TAG_GROUPS;
     }
 };
 
 export const saveTagGroups = async (groups: TagGroup[], userId?: string): Promise<TagGroup[]> => {
+    const cacheKey = userId || 'global';
+    
+    // Optimistic Cache Update
+    if (!CACHE.tagGroups) CACHE.tagGroups = {};
+    CACHE.tagGroups[cacheKey] = groups;
+
     return api<TagGroup[]>('/tags', {
         method: 'POST',
         body: JSON.stringify({ groups, userId })
@@ -202,19 +244,35 @@ export const saveTagGroups = async (groups: TagGroup[], userId?: string): Promis
 // --- Strategy Management ---
 
 export const getStrategies = async (userId?: string): Promise<string[]> => {
+    const cacheKey = userId || 'global';
+
+    // Check Cache
+    if (CACHE.strategies && CACHE.strategies[cacheKey]) {
+        return CACHE.strategies[cacheKey];
+    }
+
     try {
         const query = userId ? `?userId=${userId}` : '';
         const strategies = await api<string[]>(`/strategies${query}`);
-        if (!strategies || strategies.length === 0) {
-            return DEFAULT_STRATEGIES;
-        }
-        return strategies;
+        const finalStrategies = (!strategies || strategies.length === 0) ? DEFAULT_STRATEGIES : strategies;
+        
+        // Update Cache
+        if (!CACHE.strategies) CACHE.strategies = {};
+        CACHE.strategies[cacheKey] = finalStrategies;
+
+        return finalStrategies;
     } catch (e) {
         return DEFAULT_STRATEGIES;
     }
 };
 
 export const saveStrategies = async (strategies: string[], userId?: string): Promise<string[]> => {
+    const cacheKey = userId || 'global';
+
+    // Optimistic Cache Update
+    if (!CACHE.strategies) CACHE.strategies = {};
+    CACHE.strategies[cacheKey] = strategies;
+
     return api<string[]>('/strategies', {
         method: 'POST',
         body: JSON.stringify({ strategies, userId })

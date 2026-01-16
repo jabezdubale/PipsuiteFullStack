@@ -182,13 +182,14 @@ const ensureSchema = async (db) => {
             } catch (e) {}
         }
         
-        // Rename logic for fees -> delta_from_pland (Legacy support migration)
-        // Note: We won't rename the column to avoid data loss if 'delta_from_pland' already exists.
-        // We assume 'fees' existed as the old column.
-        // If you strictly want to rename:
-        // try { await db.query(`ALTER TABLE trades RENAME COLUMN fees TO delta_from_pland`); } catch(e) {}
-        // But above we added `fees` and `delta_from_pland` as IF NOT EXISTS.
-        // For this specific request, we will ensure both exist.
+        // 8. Performance Indexes (Phase 3 Optimization)
+        try {
+            await db.query(`CREATE INDEX IF NOT EXISTS idx_trades_account_id ON trades(account_id)`);
+            await db.query(`CREATE INDEX IF NOT EXISTS idx_trades_entry_date ON trades(entry_date DESC)`);
+            await db.query(`CREATE INDEX IF NOT EXISTS idx_accounts_user_id ON accounts(user_id)`);
+        } catch(e) {
+            console.warn("Index creation warning:", e.message);
+        }
 
         isSchemaChecked = true;
     } catch (err) {

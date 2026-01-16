@@ -248,7 +248,7 @@ const CloseTradeModal: React.FC<CloseTradeModalProps> = ({ currentData, tagGroup
   const handleRemoveImage = (index: number) => {
       setFormData(prev => ({
           ...prev,
-          screenshots: prev.screenshots.filter((_, i) => i !== index)
+          screenshots: prev.screenshots.filter((_: any, i: number) => i !== index)
       }));
   };
 
@@ -319,7 +319,7 @@ const CloseTradeModal: React.FC<CloseTradeModalProps> = ({ currentData, tagGroup
 
   return (
     <div 
-      className="fixed inset-0 bg-black/80 flex items-center justify-center z-50 p-4 backdrop-blur-sm animate-in fade-in"
+      className="fixed inset-0 bg-black/80 flex items-center justify-center z-[200] p-4 backdrop-blur-sm animate-in fade-in"
       onClick={(e) => {
           e.stopPropagation();
           onClose();

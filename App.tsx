@@ -16,7 +16,7 @@ import { getTrades, saveTrade, deleteTrades, getAccounts, saveAccount, deleteAcc
 import { fetchCurrentPrice, PriceResult } from './services/priceService';
 import { extractTradeParamsFromImage } from './services/geminiService';
 import { Trade, TradeStats, Account, TradeType, TradeStatus, ASSETS, TagGroup, OrderType, Session, TradeOutcome, User } from './types';
-import { X, ChevronDown, Calculator, TrendingUp, TrendingDown, RefreshCw, Loader2, Upload, Plus, Trash2, Clipboard, ChevronUp, Eraser, User as UserIcon } from 'lucide-react';
+import { X, ChevronDown, Calculator, TrendingUp, TrendingDown, RefreshCw, Loader2, Upload, Plus, Trash2, Clipboard, ChevronUp, Eraser, User as UserIcon, Database } from 'lucide-react';
 import UserModal from './components/UserModal';
 
 function App() {
@@ -1083,8 +1083,22 @@ function App() {
             <TagManager groups={tagGroups} onUpdate={handleUpdateTags} onCleanupTag={handleCleanupTag} />
 
             <div className="bg-surface border border-border rounded-xl p-6 shadow-sm opacity-80 hover:opacity-100 transition-opacity mt-8">
-                <h3 className="font-semibold mb-4 text-primary">Data Storage</h3>
-                <p className="text-sm text-textMuted">Data is saved locally in your browser (LocalStorage). Clearing browser cache will delete your data.</p>
+                <h3 className="font-semibold mb-4 text-primary flex items-center gap-2"><Database size={16}/> Data Storage</h3>
+                <p className="text-sm text-textMuted leading-relaxed mb-4">
+                    Your trades, accounts, and journal entries are securely stored in the <strong>Database</strong>.
+                </p>
+                <div className="text-xs text-textMuted bg-surfaceHighlight/30 p-4 rounded-lg border border-border/50">
+                    <p className="font-semibold mb-2 text-textMain">Local Browser Storage (LocalStorage) is used for:</p>
+                    <ul className="list-disc pl-4 space-y-1.5 opacity-90">
+                        <li>Selected User Profile & Account</li>
+                        <li>Dashboard Layout & Widget Visibility</li>
+                        <li>Trade List Column Preferences</li>
+                        <li>Active Filters (Tags, Date ranges)</li>
+                    </ul>
+                    <p className="mt-3 opacity-70 italic border-t border-border/30 pt-2">
+                        Clearing your browser cache will reset these display preferences, but your trading data will remain safe.
+                    </p>
+                </div>
             </div>
           </div>
         );
@@ -1180,7 +1194,7 @@ function App() {
 
       {isAddModalOpen && (
         <div 
-            className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 p-4 backdrop-blur-sm animate-in fade-in"
+            className="fixed inset-0 bg-black/70 flex items-center justify-center z-[200] p-4 backdrop-blur-sm animate-in fade-in"
             onClick={() => setIsAddModalOpen(false)}
         >
           <div 

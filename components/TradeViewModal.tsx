@@ -147,7 +147,7 @@ const TradeViewModal: React.FC<TradeViewModalProps> = ({ trade, account, onClose
 
   return (
     <div 
-      className="fixed inset-0 bg-black/70 flex items-center justify-center z-[60] p-4 backdrop-blur-sm animate-in fade-in duration-200"
+      className="fixed inset-0 bg-black/70 flex items-center justify-center z-[200] p-4 backdrop-blur-sm animate-in fade-in duration-200"
       onClick={onClose}
     >
       <div 
@@ -417,7 +417,7 @@ const TradeViewModal: React.FC<TradeViewModalProps> = ({ trade, account, onClose
       {/* Image Zoom Modal */}
       {selectedImage && (
         <div 
-          className="fixed inset-0 bg-black/95 flex items-center justify-center z-[70] p-4 animate-in fade-in"
+          className="fixed inset-0 bg-black/95 flex items-center justify-center z-[210] p-4 animate-in fade-in"
           onClick={(e) => {
             e.stopPropagation();
             setSelectedImage(null);

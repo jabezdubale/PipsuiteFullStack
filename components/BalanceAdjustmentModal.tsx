@@ -1,3 +1,4 @@
+
 import React, { useState } from 'react';
 import { X, ArrowDownLeft, ArrowUpRight } from 'lucide-react';
 
@@ -27,7 +28,7 @@ const BalanceAdjustmentModal: React.FC<BalanceAdjustmentModalProps> = ({ current
 
   return (
     <div 
-      className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 p-4 backdrop-blur-sm animate-in fade-in"
+      className="fixed inset-0 bg-black/70 flex items-center justify-center z-[200] p-4 backdrop-blur-sm animate-in fade-in"
       onClick={onClose}
     >
       <div 

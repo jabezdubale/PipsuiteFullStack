@@ -14,26 +14,22 @@ import {
   ReferenceLine,
   PieChart,
   Pie,
-  ScatterChart,
-  Scatter,
   Legend
 } from 'recharts';
 import { Trade, TradeStats, TagGroup, TradeOutcome, TradeStatus } from '../types';
 import { 
-  TrendingUp, 
   Target, 
   Activity, 
   BarChart2, 
   Zap, 
-  Calendar as CalendarIcon, 
   Filter,
   ArrowUpRight,
   ArrowDownRight,
-  Info,
   DollarSign,
   PieChart as PieChartIcon,
   Clock,
-  Tags
+  Tags,
+  TrendingUp
 } from 'lucide-react';
 
 interface DashboardProps {
@@ -100,7 +96,7 @@ const Dashboard: React.FC<DashboardProps> = ({ trades, tagGroups }) => {
   
   // 1. Filter Logic
   const dashboardTrades = useMemo(() => {
-      let filtered = trades.filter(t => !t.isDeleted); // Basic filter
+      let filtered = trades.filter(t => !t.isDeleted); 
       
       if (startDate) {
           const start = new Date(startDate).getTime();
@@ -114,6 +110,7 @@ const Dashboard: React.FC<DashboardProps> = ({ trades, tagGroups }) => {
       return filtered.sort((a, b) => new Date(a.entryDate || a.createdAt).getTime() - new Date(b.entryDate || b.createdAt).getTime());
   }, [trades, startDate, endDate]);
 
+  // Strict Rule: Only calculate stats on CLOSED trades
   const closedTrades = useMemo(() => dashboardTrades.filter(t => t.outcome === TradeOutcome.CLOSED), [dashboardTrades]);
 
   // 2. Stats Calculation

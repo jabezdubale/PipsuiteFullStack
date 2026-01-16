@@ -136,8 +136,12 @@ export const deleteAccount = async (accountId: string): Promise<void> => {
 
 // --- Trade Management ---
 
-export const getTrades = async (): Promise<Trade[]> => {
-    return api<Trade[]>('/trades');
+export const getTrades = async (userId?: string, accountId?: string): Promise<Trade[]> => {
+    const params = new URLSearchParams();
+    if (userId) params.append('userId', userId);
+    if (accountId) params.append('accountId', accountId);
+    const query = params.toString() ? `?${params.toString()}` : '';
+    return api<Trade[]>(`/trades${query}`);
 };
 
 export const saveTrade = async (trade: Trade): Promise<Trade[]> => {

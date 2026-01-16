@@ -123,20 +123,16 @@ function App() {
       setCurrentUser(newUser);
       localStorage.setItem('pipsuite_current_user_id', newUser.id);
 
-      // Load User Scoped Data
+      // Load User Scoped Data - Pass userId to getTrades to filter server-side
       const [userAccounts, userTrades, userTags, userStrategies] = await Promise.all([
           getAccounts(userId),
-          getTrades(), 
+          getTrades(userId), 
           getTagGroups(userId),
           getStrategies(userId)
       ]);
 
-      // Filter trades for this user's accounts
-      const userAccountIds = userAccounts.map(a => a.id);
-      const filteredTrades = userTrades.filter(t => userAccountIds.includes(t.accountId));
-
       setAccounts(userAccounts);
-      setTrades(filteredTrades);
+      setTrades(userTrades);
       setTagGroups(userTags);
       setStrategies(userStrategies);
 
@@ -401,18 +397,28 @@ function App() {
   // Stats
   const stats: TradeStats = useMemo(() => {
     const totalTrades = filteredTrades.length;
+    
+    // Only calculate stats on CLOSED trades to avoid skewing win rate
+    const closedTrades = filteredTrades.filter(t => t.outcome === TradeOutcome.CLOSED);
+
     if (totalTrades === 0) {
       return { totalTrades: 0, winRate: 0, netPnL: 0, avgWin: 0, avgLoss: 0, profitFactor: 0, bestTrade: 0, worstTrade: 0 };
     }
 
-    const wins = filteredTrades.filter(t => t.pnl > 0);
-    const losses = filteredTrades.filter(t => t.pnl <= 0);
+    const wins = closedTrades.filter(t => t.pnl > 0);
+    const losses = closedTrades.filter(t => t.pnl <= 0); // Open trades are excluded by the closedTrades filter
     
     const totalWinPnl = wins.reduce((sum, t) => sum + t.pnl, 0);
     const totalLossPnl = Math.abs(losses.reduce((sum, t) => sum + t.pnl, 0));
     
-    const netPnL = totalWinPnl - totalLossPnl;
-    const winRate = (wins.length / totalTrades) * 100;
+    // Net PnL includes partials from open trades? Usually yes, but here we strictly follow dashboard logic
+    // If dashboard shows open trades in list, stats usually reflect closed.
+    // If we want Net PnL to include everything, use filteredTrades.
+    // But for WinRate/AvgWin/Loss, use closed.
+    
+    const allNetPnL = filteredTrades.reduce((sum, t) => sum + t.pnl, 0);
+    
+    const winRate = closedTrades.length > 0 ? (wins.length / closedTrades.length) * 100 : 0;
     const avgWin = wins.length ? totalWinPnl / wins.length : 0;
     const avgLoss = losses.length ? totalLossPnl / losses.length : 0;
     const profitFactor = totalLossPnl === 0 ? totalWinPnl : totalWinPnl / totalLossPnl;
@@ -420,7 +426,7 @@ function App() {
     const bestTrade = Math.max(...filteredTrades.map(t => t.pnl), 0);
     const worstTrade = Math.min(...filteredTrades.map(t => t.pnl), 0);
 
-    return { totalTrades, winRate, netPnL, avgWin, avgLoss, profitFactor, bestTrade, worstTrade };
+    return { totalTrades, winRate, netPnL: allNetPnL, avgWin, avgLoss, profitFactor, bestTrade, worstTrade };
   }, [filteredTrades]);
 
   // --- Async Handlers ---
@@ -596,10 +602,11 @@ function App() {
       }
   };
 
-  const handleUpdateBalance = async (amount: number, type: 'deposit' | 'withdraw') => {
+  const handleUpdateBalance = async (amount: number, type: 'deposit' | 'withdraw', accountId?: string) => {
+      const targetAccountId = accountId || selectedAccountId;
       const adjustment = type === 'deposit' ? amount : -amount;
       try {
-        const updatedAccounts = await adjustAccountBalance(selectedAccountId, adjustment);
+        const updatedAccounts = await adjustAccountBalance(targetAccountId, adjustment);
         setAccounts(updatedAccounts);
       } catch(e) {
         alert("Failed to update balance.");
@@ -952,7 +959,7 @@ function App() {
             accounts={accounts} 
             tagGroups={tagGroups}
             strategies={strategies}
-            onUpdateBalance={handleUpdateBalance} 
+            onUpdateBalance={(amount, type) => handleUpdateBalance(amount, type, trade.accountId)}
          />;
        }
     }
@@ -1130,7 +1137,7 @@ function App() {
       onAddTradeClick={() => setIsAddModalOpen(true)}
       toggleTheme={() => setIsDarkMode(!isDarkMode)}
       isDarkMode={isDarkMode}
-      onUpdateBalance={handleUpdateBalance}
+      onUpdateBalance={(amount, type) => handleUpdateBalance(amount, type, selectedAccountId)}
       users={users}
       currentUser={currentUser}
       onSwitchUser={(id) => handleSwitchUser(id, users)}
@@ -1155,7 +1162,7 @@ function App() {
               onDelete={() => handleRequestDelete([selectedTradeForView.id])} 
               onSave={handleSaveTrade}
               tagGroups={tagGroups}
-              onUpdateBalance={handleUpdateBalance}
+              onUpdateBalance={(amount, type) => handleUpdateBalance(amount, type, selectedTradeForView.accountId)}
           />
       )}
 

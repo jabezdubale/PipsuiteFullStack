@@ -33,15 +33,29 @@ export const calculateAutoTags = (params: AutoTagParams): string[] => {
         return Array.from(currentTags);
     }
 
-    // Comparison tolerance for floats
+    // Comparison tolerance for floats (optional, but inequality is primary)
     const isEq = (a: number, b: number) => Math.abs(a - b) < 0.00001;
 
-    // 2. #TP (Touched Take Profit)
-    const hitTP = takeProfit !== undefined && isEq(exitPrice, takeProfit);
+    // 2. #TP (Touched or Crossed Take Profit)
+    let hitTP = false;
+    if (takeProfit !== undefined) {
+        if (type === TradeType.LONG) {
+            hitTP = exitPrice >= takeProfit;
+        } else {
+            hitTP = exitPrice <= takeProfit;
+        }
+    }
     setTag('#TP', hitTP);
 
-    // 3. #SL (Touched Stop Loss)
-    const hitSL = stopLoss !== undefined && isEq(exitPrice, stopLoss);
+    // 3. #SL (Touched or Crossed Stop Loss)
+    let hitSL = false;
+    if (stopLoss !== undefined) {
+        if (type === TradeType.LONG) {
+            hitSL = exitPrice <= stopLoss;
+        } else {
+            hitSL = exitPrice >= stopLoss;
+        }
+    }
     setTag('#SL', hitSL);
 
     // 4. #Break-Even (Exit == Entry)

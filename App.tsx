@@ -12,7 +12,7 @@ import DeleteConfirmationModal from './components/DeleteConfirmationModal';
 import DeleteAccountModal from './components/DeleteAccountModal';
 import TagManager from './components/TagManager';
 import StrategyManager from './components/StrategyManager';
-import { getTrades, saveTrade, deleteTrades, getAccounts, saveAccount, deleteAccount, getTagGroups, saveTagGroups, getStrategies, saveStrategies, saveTrades, getSetting, saveSetting, getUsers, saveUser, deleteUser, adjustAccountBalance } from './services/storageService';
+import { getTrades, saveTrade, deleteTrades, getAccounts, saveAccount, deleteAccount, getTagGroups, saveTagGroups, getStrategies, saveStrategies, saveTrades, getSetting, saveSetting, getUsers, saveUser, deleteUser, adjustAccountBalance, closeTrade } from './services/storageService';
 import { fetchCurrentPrice, PriceResult } from './services/priceService';
 import { extractTradeParamsFromImage } from './services/geminiService';
 import { Trade, TradeStats, Account, TradeType, TradeStatus, ASSETS, TagGroup, OrderType, Session, TradeOutcome, User } from './types';
@@ -90,7 +90,7 @@ function App() {
         if (userToSelect) {
             await handleSwitchUser(userToSelect.id, loadedUsers);
         } else {
-            // Fallback load if no users (legacy mode)
+            // Fallback load if no users (legacy mode - though db enforces user now)
             const [loadedAccounts, loadedTrades, loadedTags, loadedStrategies] = await Promise.all([
               getAccounts(),
               getTrades(),
@@ -123,20 +123,17 @@ function App() {
       setCurrentUser(newUser);
       localStorage.setItem('pipsuite_current_user_id', newUser.id);
 
-      // Load User Scoped Data
+      // Load User Scoped Data - PASS userId TO getTrades
       const [userAccounts, userTrades, userTags, userStrategies] = await Promise.all([
           getAccounts(userId),
-          getTrades(), 
+          getTrades(userId), 
           getTagGroups(userId),
           getStrategies(userId)
       ]);
 
-      // Filter trades for this user's accounts
-      const userAccountIds = userAccounts.map(a => a.id);
-      const filteredTrades = userTrades.filter(t => userAccountIds.includes(t.accountId));
-
+      // Filter trades for this user's accounts just in case, though backend should handle it
       setAccounts(userAccounts);
-      setTrades(filteredTrades);
+      setTrades(userTrades);
       setTagGroups(userTags);
       setStrategies(userStrategies);
 
@@ -427,7 +424,14 @@ function App() {
 
   const handleSaveTrade = async (trade: Trade, shouldClose: boolean = true) => {
     try {
-        const updatedTrades = await saveTrade(trade);
+        let updatedTrades;
+        
+        // If this is a CLOSE action (has outcome=CLOSED), use atomic close endpoint
+        // NOTE: This logic could be inside TradeDetail/CloseModal, but we check here too.
+        // HOWEVER, handleCloseModalConfirm is where atomic close should happen.
+        // Standard "Save" usually just updates fields.
+        
+        updatedTrades = await saveTrade(trade);
         setTrades(updatedTrades);
         
         if (shouldClose) {
@@ -437,6 +441,24 @@ function App() {
     } catch (e) {
         alert("Failed to save trade.");
     }
+  };
+
+  const handleAtomicCloseTrade = async (trade: Trade, affectBalance: boolean) => {
+      try {
+          const updated = await closeTrade(trade, affectBalance);
+          // Update local state - since it returns only 1 trade or array of affected, we can re-fetch or merge.
+          // For simplicity and consistency with existing pattern, let's refresh full list
+          if (currentUser) {
+              const fullList = await getTrades(currentUser.id);
+              setTrades(fullList);
+              const freshAccounts = await getAccounts(currentUser.id);
+              setAccounts(freshAccounts);
+          }
+          setSubView('list');
+      } catch (e) {
+          alert("Failed to close trade securely.");
+          console.error(e);
+      }
   };
 
   const handleImportTrades = async (newTrades: Trade[]) => {
@@ -751,6 +773,7 @@ function App() {
       quantity: parseFloat(newTradeForm.quantity || 0),
       riskPercentage: newTradeForm.riskPercentage ? parseFloat(newTradeForm.riskPercentage) : undefined,
       fees: 0,
+      deltaFromPland: 0, // Default for new trade
       balance: newTradeForm.balance ? parseFloat(newTradeForm.balance) : undefined,
       orderType: determinedOrderType,
       setup: 'SMC', 

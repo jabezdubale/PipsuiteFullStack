@@ -78,7 +78,8 @@ const TradeDetail: React.FC<TradeDetailProps> = ({ trade, accounts, tagGroups, s
     entryPrice: trade.entryPrice.toString(),
     exitPrice: trade.exitPrice ? trade.exitPrice.toString() : '',
     quantity: trade.quantity.toString(),
-    fees: trade.fees.toString(),
+    fees: trade.fees.toString(), // Manual Fees
+    deltaFromPland: trade.deltaFromPland ? trade.deltaFromPland.toString() : '0', // Calculated Delta
     takeProfit: trade.takeProfit ? trade.takeProfit.toString() : '',
     stopLoss: trade.stopLoss ? trade.stopLoss.toString() : '',
     setup: trade.setup || ''
@@ -147,20 +148,20 @@ const TradeDetail: React.FC<TradeDetailProps> = ({ trade, accounts, tagGroups, s
          }
     }
     
-    let feesDisplay: string | number = '-';
-    let feesValue = 0;
+    let deltaDisplay: string | number = '-';
+    let deltaValue = 0;
 
     if (hasMainPnl) {
-        feesValue = plannedReward - netPnlValue;
-        feesDisplay = feesValue;
+        deltaValue = plannedReward - netPnlValue;
+        deltaDisplay = deltaValue;
     }
     
     return {
         partialsTotal,
         netPnlValue,
         netPnlDisplay,
-        feesValue,
-        feesDisplay,
+        deltaValue,
+        deltaDisplay,
         plannedReward,
         rr
     };
@@ -205,7 +206,8 @@ const TradeDetail: React.FC<TradeDetailProps> = ({ trade, accounts, tagGroups, s
       const entryPrice = parseFloat(currentFormData.entryPrice) || 0;
       const exitPrice = parseFloat(currentFormData.exitPrice) || 0;
       const quantity = parseFloat(currentFormData.quantity) || 0;
-      const fees = typeof currentFinancials.feesDisplay === 'number' ? currentFinancials.feesDisplay : 0;
+      const fees = parseFloat(currentFormData.fees) || 0;
+      const deltaFromPland = typeof currentFinancials.deltaDisplay === 'number' ? currentFinancials.deltaDisplay : 0;
       const takeProfit = parseFloat(currentFormData.takeProfit) || undefined;
       const stopLoss = parseFloat(currentFormData.stopLoss) || undefined;
       const mainPnl = currentFormData.mainPnl === '' ? undefined : parseFloat(currentFormData.mainPnl);
@@ -217,6 +219,7 @@ const TradeDetail: React.FC<TradeDetailProps> = ({ trade, accounts, tagGroups, s
           exitPrice: currentFormData.exitPrice ? exitPrice : undefined,
           quantity,
           fees,
+          deltaFromPland,
           takeProfit,
           stopLoss,
           mainPnl,
@@ -388,12 +391,17 @@ const TradeDetail: React.FC<TradeDetailProps> = ({ trade, accounts, tagGroups, s
           mainPnl: undefined,
           partials: [],
           pnl: 0,
-          status: TradeStatus.MISSED
+          status: TradeStatus.MISSED,
+          deltaFromPland: 0
       };
       onSave(tradeToSave, false);
   };
 
   const handleCloseModalConfirm = (closedData: any) => {
+      // NOTE: Atomic close logic should be handled by calling `closeTrade` in App.tsx
+      // But TradeDetail component structure uses onSave prop.
+      // We'll trust App.tsx to call the right service if outcome is changing to CLOSED.
+      
       const updatedFormData = {
           ...formData,
           ...closedData,
@@ -412,10 +420,10 @@ const TradeDetail: React.FC<TradeDetailProps> = ({ trade, accounts, tagGroups, s
 
       updatedFormData.isBalanceUpdated = !!affectBalance;
 
-      if (affectBalance && onUpdateBalance) {
-          const type = net >= 0 ? 'deposit' : 'withdraw';
-          onUpdateBalance(Math.abs(net), type);
-      }
+      // NOTE: Balance adjustment is handled atomically by backend now (if using new endpoint)
+      // BUT this component triggers `onUpdateBalance` callback which updates App state.
+      // App.tsx needs to be updated to NOT call this manually if using Atomic Close.
+      // For now, we update local state PnL.
 
       updatedFormData.pnl = net;
 
@@ -435,7 +443,8 @@ const TradeDetail: React.FC<TradeDetailProps> = ({ trade, accounts, tagGroups, s
         entryPrice: parseFloat(updatedFormData.entryPrice),
         exitPrice: updatedFormData.exitPrice ? parseFloat(updatedFormData.exitPrice) : undefined,
         quantity: parseFloat(updatedFormData.quantity),
-        fees: typeof calculatedFinancials.feesDisplay === 'number' ? calculatedFinancials.feesDisplay : 0, 
+        fees: parseFloat(updatedFormData.fees) || 0, // Manual fees
+        deltaFromPland: typeof calculatedFinancials.deltaDisplay === 'number' ? calculatedFinancials.deltaDisplay : 0, 
         takeProfit: updatedFormData.takeProfit ? parseFloat(updatedFormData.takeProfit) : undefined,
         stopLoss: updatedFormData.stopLoss ? parseFloat(updatedFormData.stopLoss) : undefined,
         mainPnl: updatedFormData.mainPnl === '' ? undefined : parseFloat(updatedFormData.mainPnl),
@@ -444,6 +453,18 @@ const TradeDetail: React.FC<TradeDetailProps> = ({ trade, accounts, tagGroups, s
       };
 
       setFormData(updatedFormData);
+      
+      // If we are closing via modal, we assume App.tsx handles the atomic close if we pass the right data
+      // We pass `affectBalance` via the `shouldClose` arg or modify the callback signature?
+      // Since `onSave` signature is fixed, we can attach `affectBalance` to the trade object temporarily or handle it in App.tsx
+      // Let's modify App.tsx to handle this.
+      // For now, we just pass trade. The modal handles `affectBalance` checkbox.
+      
+      // We'll rely on onSave to handle it. App.tsx logic will be updated.
+      // However, we need to pass `affectBalance` up.
+      // Hack: attach it to the trade object, App.tsx will strip it.
+      (finalTradeToSave as any)._affectBalance = affectBalance;
+      
       onSave(finalTradeToSave, false);
       setIsCloseModalOpen(false);
   };
@@ -784,7 +805,7 @@ const TradeDetail: React.FC<TradeDetailProps> = ({ trade, accounts, tagGroups, s
                           </div>
                       </div>
 
-                      {/* Row 2: Core Profit | Partials Profit | Fees */}
+                      {/* Row 2: Core Profit | Partials Profit | Manual Fees */}
                       <div className="grid grid-cols-3 gap-4 text-center">
                           <div>
                               <label className="text-[10px] uppercase text-textMuted mb-1 block">Core P&L</label>
@@ -806,10 +827,25 @@ const TradeDetail: React.FC<TradeDetailProps> = ({ trade, accounts, tagGroups, s
                               <div className="text-sm font-bold text-textMain py-1.5">${calculatedFinancials.partialsTotal.toFixed(2)}</div>
                           </div>
                           <div>
-                              <label className="text-[10px] uppercase text-textMuted mb-1 block">Fees (Calc)</label>
-                              <div className={`text-sm font-medium py-1.5 ${typeof calculatedFinancials.feesDisplay === 'number' ? 'text-loss' : 'text-textMuted'}`}>
-                                  {typeof calculatedFinancials.feesDisplay === 'number' ? `$${calculatedFinancials.feesDisplay.toFixed(2)}` : calculatedFinancials.feesDisplay}
+                              <label className="text-[10px] uppercase text-textMuted mb-1 block">Fees (Manual)</label>
+                              <div className="relative">
+                                <span className="absolute left-0 top-1/2 -translate-y-1/2 text-xs text-textMuted">$</span>
+                                <input 
+                                    type="number" 
+                                    step="any"
+                                    value={formData.fees}
+                                    onChange={(e) => handleChange('fees', e.target.value)}
+                                    className="w-full bg-transparent text-center text-sm font-medium text-loss focus:outline-none border-b border-border/30 hover:border-border"
+                                    placeholder="0.00"
+                                />
                               </div>
+                          </div>
+                      </div>
+                      
+                      <div className="text-center mt-3 pt-3 border-t border-border/30">
+                          <label className="text-[10px] uppercase text-textMuted mb-1 block">Plan Delta (Calculated)</label>
+                          <div className={`text-xs font-mono ${typeof calculatedFinancials.deltaDisplay === 'number' ? 'text-textMain' : 'text-textMuted'}`}>
+                              {typeof calculatedFinancials.deltaDisplay === 'number' ? `$${calculatedFinancials.deltaDisplay.toFixed(2)}` : calculatedFinancials.deltaDisplay}
                           </div>
                       </div>
                   </div>

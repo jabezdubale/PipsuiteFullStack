@@ -233,7 +233,7 @@ const TradeList: React.FC<TradeListProps> = ({ trades, selectedAccountId, onTrad
 
   const getFilterType = (key: string): ColumnFilterState['type'] | null => {
       if (['createdAt', 'entryDate', 'exitDate', 'entryTime', 'exitTime'].includes(key)) return 'date';
-      if (['pnl', 'mainPnl', 'fees', 'quantity', 'entryPrice', 'exitPrice', 'stopLoss', 'takeProfit', 'rr', 'plannedReward', 'partialsCount', 'partialProfit', 'screenshotsCount'].includes(key)) return 'number';
+      if (['pnl', 'mainPnl', 'fees', 'deltaFromPland', 'quantity', 'entryPrice', 'exitPrice', 'stopLoss', 'takeProfit', 'rr', 'plannedReward', 'partialsCount', 'partialProfit', 'screenshotsCount'].includes(key)) return 'number';
       if (key === 'tags') return 'tags';
       if (['notes', 'emotionalNotes', 'screenshots'].includes(key)) return null; 
       return 'select'; 
@@ -495,7 +495,8 @@ const TradeList: React.FC<TradeListProps> = ({ trades, selectedAccountId, onTrad
             orderType: getIndex(['ordertype']),
             setup: getIndex(['strategy', 'setup']),
             mainPnl: getIndex(['coreprofit', 'corepnl', 'grosspnl']), 
-            fees: getIndex(['fees', 'commission', 'swap']),
+            fees: getIndex(['fees', 'commission', 'swap']), // Manual fees
+            deltaFromPland: getIndex(['delta', 'plandelta', 'slippage']), 
             pnl: getIndex(['netpnl', 'netpl', 'pnl', 'profit']),
             notes: getIndex(['technicalnotes', 'notes', 'comments']),
             emotionalNotes: getIndex(['emotionalnotes']),
@@ -583,6 +584,7 @@ const TradeList: React.FC<TradeListProps> = ({ trades, selectedAccountId, onTrad
                   setup: getValue(idx.setup) || '',
                   mainPnl: getValue(idx.mainPnl) ? parseFloat(getValue(idx.mainPnl)!) : undefined,
                   fees: parseFloat(getValue(idx.fees) || '0') || 0,
+                  deltaFromPland: parseFloat(getValue(idx.deltaFromPland) || '0') || 0,
                   pnl: parseFloat(getValue(idx.pnl) || '0') || 0,
                   notes: getValue(idx.notes) || '',
                   emotionalNotes: getValue(idx.emotionalNotes) || '',
@@ -686,11 +688,12 @@ const TradeList: React.FC<TradeListProps> = ({ trades, selectedAccountId, onTrad
       case 'tags':
          if (!trade.tags || trade.tags.length === 0) return '-';
          return (<div className="flex gap-1">{trade.tags.slice(0, 2).map(tag => (<span key={tag} className="text-[10px] bg-surfaceHighlight border border-border px-1 rounded truncate max-w-[60px]">{tag}</span>))}{trade.tags.length > 2 && <span className="text-[10px] text-textMuted">+{trade.tags.length - 2}</span>}</div>);
+      case 'fees': 
+      case 'deltaFromPland':
       case 'entryPrice':
       case 'exitPrice':
       case 'stopLoss':
       case 'takeProfit':
-      case 'fees':
         // @ts-ignore
         return trade[key]?.toLocaleString() || '-';
       default:

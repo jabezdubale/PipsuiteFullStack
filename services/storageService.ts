@@ -14,7 +14,6 @@ const api = async <T>(endpoint: string, options?: RequestInit): Promise<T> => {
     if (!response.ok) {
         throw new Error(`API Error: ${response.statusText}`);
     }
-    // Handle specific case where generic settings endpoint returns null
     const text = await response.text();
     try {
         return text ? JSON.parse(text) : null;
@@ -66,7 +65,7 @@ const DEFAULT_STRATEGIES: string[] = [
     'Gap-Fill'
 ];
 
-// --- Generic Settings (Theme, Columns, User Profile) ---
+// --- Generic Settings ---
 
 export const getSetting = async <T>(key: string, defaultVal: T): Promise<T> => {
     try {
@@ -108,7 +107,6 @@ export const getAccounts = async (userId?: string): Promise<Account[]> => {
     try {
         const query = userId ? `?userId=${userId}` : '';
         const accounts = await api<Account[]>(`/accounts${query}`);
-        // If we requested for a specific user and got nothing, we might need to initialize (handled in UI)
         return accounts || [];
     } catch (e) {
         console.error("Failed to fetch accounts", e);
@@ -136,8 +134,9 @@ export const deleteAccount = async (accountId: string): Promise<void> => {
 
 // --- Trade Management ---
 
-export const getTrades = async (): Promise<Trade[]> => {
-    return api<Trade[]>('/trades');
+export const getTrades = async (userId?: string): Promise<Trade[]> => {
+    const query = userId ? `?userId=${userId}` : '';
+    return api<Trade[]>(`/trades${query}`);
 };
 
 export const saveTrade = async (trade: Trade): Promise<Trade[]> => {
@@ -147,8 +146,20 @@ export const saveTrade = async (trade: Trade): Promise<Trade[]> => {
     });
 };
 
+// Atomic Close Transaction
+export const closeTrade = async (trade: Trade, affectBalance: boolean): Promise<Trade[]> => {
+    const result = await api<Trade[]>(`/trades/${trade.id}/close`, {
+        method: 'POST',
+        body: JSON.stringify({ trade, affectBalance })
+    });
+    // This endpoint returns [updatedTrade]. We generally want to refresh full list or just merge.
+    // For compatibility with App.tsx which expects "all trades", we might need to handle this.
+    // BUT the Atomic Close only returns the single modified trade for efficiency.
+    // The calling code in App.tsx should handle merging or refetching.
+    return result; 
+};
+
 export const saveTrades = async (newTrades: Trade[]): Promise<Trade[]> => {
-    // Uses the batch import endpoint for efficiency and reliability
     return api<Trade[]>('/trades/batch', {
         method: 'POST',
         body: JSON.stringify({ trades: newTrades })
@@ -172,8 +183,6 @@ export const getTagGroups = async (userId?: string): Promise<TagGroup[]> => {
     try {
         const query = userId ? `?userId=${userId}` : '';
         const groups = await api<TagGroup[]>(`/tags${query}`);
-        
-        // If user specific tags are empty, return defaults
         if (!groups || groups.length === 0) {
             return DEFAULT_TAG_GROUPS;
         }

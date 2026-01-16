@@ -56,16 +56,32 @@ const parseTradeRow = (row) => {
     return t;
 };
 
+const sanitizeNumber = (val) => {
+    if (val === '' || val === null || val === undefined) return null;
+    const n = parseFloat(val);
+    return isNaN(n) ? null : n;
+};
+
+const safeJson = (val) => {
+    try {
+        return JSON.stringify(val || []);
+    } catch (e) {
+        console.error("JSON Stringify Error", e);
+        return '[]';
+    }
+};
+
 const mapTradeToParams = (t) => [
     t.id, t.accountId, t.symbol, t.type, t.status, t.outcome,
-    t.entryPrice, t.exitPrice, t.stopLoss, t.takeProfit, t.quantity,
-    t.fees, t.mainPnl, t.pnl, t.balance,
+    sanitizeNumber(t.entryPrice), sanitizeNumber(t.exitPrice), 
+    sanitizeNumber(t.stopLoss), sanitizeNumber(t.takeProfit), sanitizeNumber(t.quantity),
+    sanitizeNumber(t.fees) || 0, sanitizeNumber(t.mainPnl), sanitizeNumber(t.pnl) || 0, sanitizeNumber(t.balance),
     t.createdAt, t.entryDate, t.exitDate, t.entryTime, t.exitTime,
     t.entrySession, t.exitSession, t.orderType, t.setup,
-    t.leverage, t.riskPercentage, t.notes, t.emotionalNotes,
-    JSON.stringify(t.tags || []),
-    JSON.stringify(t.screenshots || []),
-    JSON.stringify(t.partials || []),
+    sanitizeNumber(t.leverage), sanitizeNumber(t.riskPercentage), t.notes, t.emotionalNotes,
+    safeJson(t.tags),
+    safeJson(t.screenshots),
+    safeJson(t.partials),
     t.isDeleted || false, t.deletedAt, t.isBalanceUpdated || false
 ];
 
@@ -80,7 +96,10 @@ app.use(async (req, res, next) => {
 });
 
 // --- Auto-Migration Helper ---
+let isSchemaChecked = false;
+
 const ensureSchema = async (db) => {
+    if (isSchemaChecked) return;
     try {
         // 1. Create Users Table
         await db.query(`
@@ -163,6 +182,7 @@ const ensureSchema = async (db) => {
                 // Ignore errors
             }
         }
+        isSchemaChecked = true;
     } catch (err) {
         console.error("Schema init failed:", err);
     }
@@ -290,6 +310,41 @@ app.post('/api/accounts', async (req, res) => {
         })));
     } catch (err) {
         if (err.code === '42703') { await ensureSchema(req.db); return res.status(500).json({ error: "Schema updated. Retry." }); }
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// Atomic Balance Adjustment
+app.post('/api/accounts/:id/adjust-balance', async (req, res) => {
+    const { id } = req.params;
+    const { amount } = req.body;
+    
+    if (amount === undefined || isNaN(amount)) {
+        return res.status(400).json({ error: "Invalid amount" });
+    }
+
+    try {
+        await req.db.query(
+            'UPDATE accounts SET balance = balance + $1 WHERE id = $2',
+            [amount, id]
+        );
+        // Return updated list for the user of this account
+        const accResult = await req.db.query('SELECT user_id FROM accounts WHERE id = $1', [id]);
+        if (accResult.rows.length === 0) return res.status(404).json({ error: "Account not found" });
+        
+        const userId = accResult.rows[0].user_id;
+        const result = await req.db.query('SELECT * FROM accounts WHERE user_id = $1 ORDER BY name ASC', [userId]);
+        
+        res.json(result.rows.map(row => ({
+            id: row.id,
+            userId: row.user_id,
+            name: row.name,
+            currency: row.currency,
+            balance: parseFloat(row.balance),
+            isDemo: row.is_demo,
+            type: row.type
+        })));
+    } catch (err) {
         res.status(500).json({ error: err.message });
     }
 });

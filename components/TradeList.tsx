@@ -469,30 +469,36 @@ const TradeList: React.FC<TradeListProps> = ({ trades, selectedAccountId, onTrad
           const rows = parseCSV(text);
           if (rows.length < 2) return; 
 
-          const headers = rows[0].map(h => h.toLowerCase().trim());
-          const getIndex = (possibleNames: string[]) => headers.findIndex(h => possibleNames.includes(h));
+          // Robust Header Normalization
+          const rawHeaders = rows[0];
+          const headers = rawHeaders.map(h => h.toLowerCase().trim().replace(/[^a-z0-9]/g, ''));
+          
+          const getIndex = (possibleNames: string[]) => {
+              const normalizedNames = possibleNames.map(n => n.toLowerCase().trim().replace(/[^a-z0-9]/g, ''));
+              return headers.findIndex(h => normalizedNames.includes(h));
+          };
 
           const idx = {
-            symbol: getIndex(['asset pair', 'symbol', 'pair']),
-            type: getIndex(['direction', 'type', 'side']),
-            createdAt: getIndex(['log time', 'date', 'created at']),
-            entryPrice: getIndex(['entry price', 'entry']),
-            entryDate: getIndex(['entry time', 'entry date']),
-            entrySession: getIndex(['entry session']),
-            exitPrice: getIndex(['exit price', 'exit']),
-            exitDate: getIndex(['exit time', 'exit date']),
-            exitSession: getIndex(['exit session']),
-            stopLoss: getIndex(['stop loss', 'sl']),
-            takeProfit: getIndex(['take profit', 'tp']),
-            quantity: getIndex(['lot size', 'quantity', 'size']),
+            symbol: getIndex(['assetpair', 'symbol', 'pair', 'ticker']),
+            type: getIndex(['direction', 'type', 'side', 'action']),
+            createdAt: getIndex(['logtime', 'date', 'createdat', 'opentime']),
+            entryPrice: getIndex(['entryprice', 'entry', 'openprice']),
+            entryDate: getIndex(['entrytime', 'entrydate', 'opendate']),
+            entrySession: getIndex(['entrysession']),
+            exitPrice: getIndex(['exitprice', 'exit', 'closeprice']),
+            exitDate: getIndex(['exittime', 'exitdate', 'closedate']),
+            exitSession: getIndex(['exitsession']),
+            stopLoss: getIndex(['stoploss', 'sl']),
+            takeProfit: getIndex(['takeprofit', 'tp']),
+            quantity: getIndex(['lotsize', 'quantity', 'size', 'volume']),
             outcome: getIndex(['outcome', 'result']),
-            orderType: getIndex(['order type']),
+            orderType: getIndex(['ordertype']),
             setup: getIndex(['strategy', 'setup']),
-            mainPnl: getIndex(['core profit', 'core p&l', 'gross pnl']), 
+            mainPnl: getIndex(['coreprofit', 'corepnl', 'grosspnl']), 
             fees: getIndex(['fees', 'commission', 'swap']),
-            pnl: getIndex(['net p&l', 'net pnl', 'pnl']),
-            notes: getIndex(['technical notes', 'notes']),
-            emotionalNotes: getIndex(['emotional notes']),
+            pnl: getIndex(['netpnl', 'netpl', 'pnl', 'profit']),
+            notes: getIndex(['technicalnotes', 'notes', 'comments']),
+            emotionalNotes: getIndex(['emotionalnotes']),
             tags: getIndex(['tags'])
           };
 
@@ -527,16 +533,25 @@ const TradeList: React.FC<TradeListProps> = ({ trades, selectedAccountId, onTrad
 
               const parseDate = (d: string | undefined) => {
                   if (!d) return undefined;
+                  // Try ISO first
                   let ts = Date.parse(d);
-                  if (isNaN(ts) && d.includes('/')) {
-                      const parts = d.split(/[/\s:]/);
+                  
+                  // Try formats like "DD/MM/YYYY" or "MM/DD/YYYY"
+                  if (isNaN(ts)) {
+                      // Common separators
+                      const parts = d.split(/[/\-\.]/);
                       if (parts.length >= 3) {
-                          const day = parseInt(parts[0]);
-                          const month = parseInt(parts[1]) - 1; 
-                          const year = parseInt(parts[2]);
-                          if (!isNaN(day) && !isNaN(month) && !isNaN(year)) {
-                              const dt = new Date(year, month, day);
-                              ts = dt.getTime();
+                          // Assume DD/MM/YYYY first for ambiguity
+                          const n1 = parseInt(parts[0]);
+                          const n2 = parseInt(parts[1]);
+                          const n3 = parseInt(parts[2]);
+                          
+                          // Heuristic: if n1 > 12, it must be day
+                          if (n1 > 12) {
+                             ts = new Date(n3, n2 - 1, n1).getTime();
+                          } else {
+                             // Fallback to MM/DD/YYYY
+                             ts = new Date(n3, n1 - 1, n2).getTime();
                           }
                       }
                   }

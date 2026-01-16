@@ -80,32 +80,23 @@ const CloseTradeModal: React.FC<CloseTradeModalProps> = ({ currentData, tagGroup
       }
   }, [result]); 
 
-  // --- Input Change Handler for Strict Enforcement ---
+  // --- Input Change Handler (Free Text) ---
   const handlePnlChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-      const val = e.target.value;
-      
-      // Allow intermediate states (empty or just minus sign)
-      if (val === '' || val === '-') {
-          setFormData(prev => ({ ...prev, mainPnl: val }));
-          return;
-      }
+      setFormData(prev => ({ ...prev, mainPnl: e.target.value }));
+  };
+
+  // --- Validate/Sign on Blur ---
+  const handlePnlBlur = () => {
+      const val = formData.mainPnl;
+      if (val === '' || val === '-') return;
 
       const num = parseFloat(val);
-      if (isNaN(num)) {
-           // If invalid (should be rare with type="number"), just update
-           setFormData(prev => ({ ...prev, mainPnl: val }));
-           return;
-      }
+      if (isNaN(num)) return;
 
       if (result === TradeStatus.WIN) {
-          // STRICT: Always positive
           setFormData(prev => ({ ...prev, mainPnl: Math.abs(num).toString() }));
       } else if (result === TradeStatus.LOSS) {
-          // STRICT: Always negative
           setFormData(prev => ({ ...prev, mainPnl: (-Math.abs(num)).toString() }));
-      } else {
-          // BREAK_EVEN: Permissive (User can edit sign manually)
-          setFormData(prev => ({ ...prev, mainPnl: val }));
       }
   };
 
@@ -406,6 +397,7 @@ const CloseTradeModal: React.FC<CloseTradeModalProps> = ({ currentData, tagGroup
                                         step="any"
                                         value={formData.mainPnl}
                                         onChange={handlePnlChange}
+                                        onBlur={handlePnlBlur}
                                         className={`w-full bg-surface border rounded-lg pl-7 pr-3 py-2 text-sm font-bold focus:ring-1 outline-none ${
                                             result === TradeStatus.WIN ? 'text-profit border-profit/30 focus:ring-profit' : 
                                             result === TradeStatus.LOSS ? 'text-loss border-loss/30 focus:ring-loss' : 

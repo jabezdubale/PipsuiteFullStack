@@ -16,7 +16,12 @@ const api = async <T>(endpoint: string, options?: RequestInit): Promise<T> => {
     }
     // Handle specific case where generic settings endpoint returns null
     const text = await response.text();
-    return text ? JSON.parse(text) : null;
+    try {
+        return text ? JSON.parse(text) : null;
+    } catch (e) {
+        console.error("Invalid JSON response:", text);
+        throw new Error("Server returned invalid data format.");
+    }
 };
 
 const DEFAULT_ACCOUNTS: Account[] = [{
@@ -115,6 +120,13 @@ export const saveAccount = async (account: Account): Promise<Account[]> => {
     return api<Account[]>('/accounts', {
         method: 'POST',
         body: JSON.stringify(account)
+    });
+};
+
+export const adjustAccountBalance = async (accountId: string, amount: number): Promise<Account[]> => {
+    return api<Account[]>(`/accounts/${accountId}/adjust-balance`, {
+        method: 'POST',
+        body: JSON.stringify({ amount })
     });
 };
 

@@ -12,7 +12,7 @@ import DeleteConfirmationModal from './components/DeleteConfirmationModal';
 import DeleteAccountModal from './components/DeleteAccountModal';
 import TagManager from './components/TagManager';
 import StrategyManager from './components/StrategyManager';
-import { getTrades, saveTrade, deleteTrades, getAccounts, saveAccount, deleteAccount, getTagGroups, saveTagGroups, getStrategies, saveStrategies, saveTrades, getSetting, saveSetting, getUsers, saveUser, deleteUser } from './services/storageService';
+import { getTrades, saveTrade, deleteTrades, getAccounts, saveAccount, deleteAccount, getTagGroups, saveTagGroups, getStrategies, saveStrategies, saveTrades, getSetting, saveSetting, getUsers, saveUser, deleteUser, adjustAccountBalance } from './services/storageService';
 import { fetchCurrentPrice, PriceResult } from './services/priceService';
 import { extractTradeParamsFromImage } from './services/geminiService';
 import { Trade, TradeStats, Account, TradeType, TradeStatus, ASSETS, TagGroup, OrderType, Session, TradeOutcome, User } from './types';
@@ -468,36 +468,17 @@ function App() {
           } else {
               const tradesToTrash = trades.filter(t => tradesToDelete.includes(t.id));
               
-              const balanceAdjustments: Record<string, number> = {};
-              tradesToTrash.forEach(t => {
+              // Revert balances for trashed trades using atomic adjustment
+              for (const t of tradesToTrash) {
                   if (t.isBalanceUpdated && t.accountId && t.pnl !== 0) {
-                      balanceAdjustments[t.accountId] = (balanceAdjustments[t.accountId] || 0) + t.pnl;
-                  }
-              });
-
-              const updatedAccountsList = [...accounts];
-              let accountsChanged = false;
-
-              for (const [accId, totalPnl] of Object.entries(balanceAdjustments)) {
-                  const accIndex = updatedAccountsList.findIndex(a => a.id === accId);
-                  if (accIndex >= 0) {
-                      const currentBalance = updatedAccountsList[accIndex].balance;
-                      const newBalance = currentBalance - totalPnl;
-                      
-                      updatedAccountsList[accIndex] = {
-                          ...updatedAccountsList[accIndex],
-                          balance: newBalance
-                      };
-                      
-                      await saveAccount(updatedAccountsList[accIndex]);
-                      accountsChanged = true;
+                      // If trade was positive, we subtract (withdraw) from balance
+                      // If trade was negative, we add (deposit) to balance
+                      // So we just subtract the Signed PnL
+                      await adjustAccountBalance(t.accountId, -t.pnl);
                   }
               }
 
-              if (accountsChanged) {
-                  setAccounts(updatedAccountsList);
-              }
-
+              // Update isDeleted flag
               const updatedTrades = trades.map(t => {
                   if (tradesToDelete.includes(t.id)) {
                       return { 
@@ -514,6 +495,12 @@ function App() {
               }
               
               setTrades(updatedTrades);
+              
+              // Refresh accounts to show updated balance
+              if (currentUser) {
+                  const freshAccounts = await getAccounts(currentUser.id);
+                  setAccounts(freshAccounts);
+              }
           }
 
           if (selectedTradeId && tradesToDelete.includes(selectedTradeId)) {
@@ -534,35 +521,12 @@ function App() {
   const handleRestoreTrades = async (ids: string[]) => {
       try {
           const tradesToRestore = trades.filter(t => ids.includes(t.id));
-          const balanceAdjustments: Record<string, number> = {};
-
-          tradesToRestore.forEach(t => {
+          
+          for (const t of tradesToRestore) {
               if (t.isBalanceUpdated && t.pnl !== 0 && t.accountId) {
-                  balanceAdjustments[t.accountId] = (balanceAdjustments[t.accountId] || 0) + t.pnl;
+                  // Re-apply PnL to balance
+                  await adjustAccountBalance(t.accountId, t.pnl);
               }
-          });
-
-          const updatedAccountsList = [...accounts];
-          let accountsChanged = false;
-
-          for (const [accId, totalPnl] of Object.entries(balanceAdjustments)) {
-              const accIndex = updatedAccountsList.findIndex(a => a.id === accId);
-              if (accIndex >= 0) {
-                  const currentBalance = updatedAccountsList[accIndex].balance;
-                  const newBalance = currentBalance + totalPnl;
-                  
-                  updatedAccountsList[accIndex] = {
-                      ...updatedAccountsList[accIndex],
-                      balance: newBalance
-                  };
-                  
-                  await saveAccount(updatedAccountsList[accIndex]);
-                  accountsChanged = true;
-              }
-          }
-
-          if (accountsChanged) {
-              setAccounts(updatedAccountsList);
           }
 
           const updatedTrades = trades.map(t => {
@@ -581,6 +545,11 @@ function App() {
           }
 
           setTrades(updatedTrades);
+          
+          if (currentUser) {
+              const freshAccounts = await getAccounts(currentUser.id);
+              setAccounts(freshAccounts);
+          }
 
       } catch (e) {
           console.error(e);
@@ -628,19 +597,12 @@ function App() {
   };
 
   const handleUpdateBalance = async (amount: number, type: 'deposit' | 'withdraw') => {
-      const account = accounts.find(a => a.id === selectedAccountId);
-      if (account) {
-          const newBalance = type === 'deposit' 
-            ? account.balance + amount 
-            : account.balance - amount;
-          
-          const updatedAccount = { ...account, balance: newBalance };
-          try {
-            const updatedAccounts = await saveAccount(updatedAccount);
-            setAccounts(updatedAccounts);
-          } catch(e) {
-            alert("Failed to update balance.");
-          }
+      const adjustment = type === 'deposit' ? amount : -amount;
+      try {
+        const updatedAccounts = await adjustAccountBalance(selectedAccountId, adjustment);
+        setAccounts(updatedAccounts);
+      } catch(e) {
+        alert("Failed to update balance.");
       }
   };
 
@@ -651,6 +613,28 @@ function App() {
           setTagGroups(updated);
       } catch (e) {
           alert("Failed to update tags");
+      }
+  };
+
+  const handleCleanupTag = async (tag: string) => {
+      // Remove tag from all trades locally and save
+      const affectedTrades = trades.filter(t => t.tags.includes(tag));
+      const updatedTrades = affectedTrades.map(t => ({
+          ...t,
+          tags: t.tags.filter(tg => tg !== tag)
+      }));
+      
+      try {
+          if (updatedTrades.length > 0) {
+              await saveTrades(updatedTrades);
+              // Update local state
+              setTrades(prev => prev.map(t => {
+                  const updated = updatedTrades.find(ut => ut.id === t.id);
+                  return updated || t;
+              }));
+          }
+      } catch (e) {
+          alert("Failed to clean up tags from trades.");
       }
   };
 
@@ -1096,7 +1080,7 @@ function App() {
             
             <StrategyManager strategies={strategies} onUpdate={handleUpdateStrategies} />
             
-            <TagManager groups={tagGroups} onUpdate={handleUpdateTags} />
+            <TagManager groups={tagGroups} onUpdate={handleUpdateTags} onCleanupTag={handleCleanupTag} />
 
             <div className="bg-surface border border-border rounded-xl p-6 shadow-sm opacity-80 hover:opacity-100 transition-opacity mt-8">
                 <h3 className="font-semibold mb-4 text-primary">Data Storage</h3>
@@ -1258,6 +1242,7 @@ function App() {
 
             <div className="flex-1 overflow-y-auto">
               <form id="add-trade-form" onSubmit={handleQuickAdd} className="p-5 pt-4 space-y-4">
+                  {/* ... Rest of form ... */}
                   <div className="grid grid-cols-2 gap-4">
                     <div>
                       <label className="block text-xs font-medium text-textMuted mb-1">Asset Pair</label>
@@ -1364,6 +1349,7 @@ function App() {
                   
                   {isFormComplete && tradeCalculations && (
                       <div className="bg-surfaceHighlight/50 border border-border rounded-lg p-3 space-y-3 text-xs">
+                          {/* ... Calc UI ... */}
                           <div className="grid grid-cols-2 border-b border-border/50 pb-2">
                             <div>
                               <span className="text-textMuted font-medium text-[10px] uppercase block mb-1">Direction</span>
@@ -1384,18 +1370,11 @@ function App() {
                                   <div className="font-mono text-textMain">
                                       {tradeCalculations.tpCalc.points.toFixed(2)} Pts <span className="text-textMuted">|</span> {tradeCalculations.tpCalc.pips.toFixed(1)} Pips
                                   </div>
-                                  <div className="font-mono text-[10px] text-textMuted">
-                                      {tradeCalculations.tpCalc.ticks.toFixed(0)} Ticks
-                                  </div>
                               </div>
-                              
                               <div className="flex flex-col gap-0.5 text-right">
                                   <span className="text-textMuted text-[10px] uppercase">Stop Loss</span>
                                   <div className="font-mono text-textMain">
                                       {tradeCalculations.slCalc.points.toFixed(2)} Pts <span className="text-textMuted">|</span> {tradeCalculations.slCalc.pips.toFixed(1)} Pips
-                                  </div>
-                                  <div className="font-mono text-[10px] text-textMuted">
-                                      {tradeCalculations.slCalc.ticks.toFixed(0)} Ticks
                                   </div>
                               </div>
                           </div>

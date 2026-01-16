@@ -6,9 +6,10 @@ import { Plus, X, Edit2, Check, XCircle, ChevronDown, ChevronUp, Trash2 } from '
 interface TagManagerProps {
   groups: TagGroup[];
   onUpdate: (groups: TagGroup[]) => void;
+  onCleanupTag?: (tag: string) => void;
 }
 
-const TagManager: React.FC<TagManagerProps> = ({ groups, onUpdate }) => {
+const TagManager: React.FC<TagManagerProps> = ({ groups, onUpdate, onCleanupTag }) => {
   const [newTagInputs, setNewTagInputs] = useState<Record<number, string>>({});
   const [editingTag, setEditingTag] = useState<{ groupIdx: number, tagIdx: number, value: string } | null>(null);
   const [expandedGroupIdx, setExpandedGroupIdx] = useState<number | null>(null);
@@ -32,7 +33,15 @@ const TagManager: React.FC<TagManagerProps> = ({ groups, onUpdate }) => {
   };
 
   const handleDeleteTag = (groupIdx: number, tagIdx: number) => {
-      if (window.confirm("Delete this tag?")) {
+      const tagToDelete = groups[groupIdx].tags[tagIdx];
+      
+      if (window.confirm(`Delete tag "${tagToDelete}"?`)) {
+        if (onCleanupTag) {
+            if (window.confirm(`Also remove "${tagToDelete}" from all existing trades? (Ghost tags will remain if Cancel)`)) {
+                onCleanupTag(tagToDelete);
+            }
+        }
+        
         const newGroups = [...groups];
         newGroups[groupIdx] = {
             ...newGroups[groupIdx],
@@ -118,6 +127,7 @@ const TagManager: React.FC<TagManagerProps> = ({ groups, onUpdate }) => {
                                                 <span>{tag}</span>
                                                 <div className="flex gap-0.5 ml-1 opacity-0 group-hover:opacity-100 transition-opacity">
                                                     <button onClick={() => startEdit(groupIdx, tagIdx, tag)} className="text-primary hover:text-blue-600 p-0.5"><Edit2 size={8}/></button>
+                                                    <button onClick={() => handleDeleteTag(groupIdx, tagIdx)} className="text-loss hover:text-red-600 p-0.5"><Trash2 size={8}/></button>
                                                 </div>
                                             </div>
                                         )

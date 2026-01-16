@@ -91,8 +91,14 @@ const TradeDetail: React.FC<TradeDetailProps> = ({ trade, accounts, tagGroups, s
   const [isMissedModalOpen, setIsMissedModalOpen] = useState(false);
   const [selectedImage, setSelectedImage] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  
+  // Ref for Auto-Save
   const saveTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const formDataRef = useRef(formData);
   const isFirstRender = useRef(true);
+  
+  // Sync ref
+  useEffect(() => { formDataRef.current = formData; }, [formData]);
 
   const account = accounts.find(a => a.id === formData.accountId);
   const isMissed = formData.outcome === TradeOutcome.MISSED;
@@ -160,6 +166,9 @@ const TradeDetail: React.FC<TradeDetailProps> = ({ trade, accounts, tagGroups, s
     };
   }, [formData, asset]);
   
+  const financialsRef = useRef(calculatedFinancials);
+  useEffect(() => { financialsRef.current = calculatedFinancials; }, [calculatedFinancials]);
+
   const getPips = (priceStr: string) => {
       if (!asset || !formData.entryPrice || !priceStr) return null;
       const entry = parseFloat(formData.entryPrice);
@@ -216,13 +225,12 @@ const TradeDetail: React.FC<TradeDetailProps> = ({ trade, accounts, tagGroups, s
           isBalanceUpdated: currentFormData.isBalanceUpdated
       };
       
-      // Fix infinite loop: Compare tags before setting state
-      const tagsChanged = JSON.stringify(updatedTags) !== JSON.stringify(currentFormData.tags);
-      if (tagsChanged) {
+      onSave(updatedTrade, false);
+      
+      // Update local tags if changed by calculation
+      if (JSON.stringify(updatedTags) !== JSON.stringify(currentFormData.tags)) {
           setFormData((prev: any) => ({ ...prev, tags: updatedTags }));
       }
-
-      onSave(updatedTrade, false);
   };
 
   useEffect(() => {
@@ -239,11 +247,14 @@ const TradeDetail: React.FC<TradeDetailProps> = ({ trade, accounts, tagGroups, s
           performSave(formData, calculatedFinancials);
       }, 1000);
 
+      // Cleanup on Unmount (Force Save)
       return () => {
           if (saveTimeoutRef.current) clearTimeout(saveTimeoutRef.current);
+          performSave(formDataRef.current, financialsRef.current);
       };
   }, [formData]); 
 
+  // Paste Listener
   useEffect(() => {
     const handlePaste = (e: ClipboardEvent) => {
       const items = e.clipboardData?.items;
@@ -344,19 +355,8 @@ const TradeDetail: React.FC<TradeDetailProps> = ({ trade, accounts, tagGroups, s
       setFormData(updatedForm);
       setIsReopenModalOpen(false);
       
-      const tradeToSave: Trade = {
-          ...updatedForm,
-          entryPrice: parseFloat(updatedForm.entryPrice),
-          exitPrice: updatedForm.exitPrice ? parseFloat(updatedForm.exitPrice) : undefined,
-          quantity: parseFloat(updatedForm.quantity),
-          fees: parseFloat(updatedForm.fees) || 0,
-          takeProfit: updatedForm.takeProfit ? parseFloat(updatedForm.takeProfit) : undefined,
-          stopLoss: updatedForm.stopLoss ? parseFloat(updatedForm.stopLoss) : undefined,
-          mainPnl: updatedForm.mainPnl === '' ? undefined : parseFloat(updatedForm.mainPnl),
-          pnl: calculatedFinancials.netPnlValue, 
-          status: TradeStatus.OPEN
-      };
-      onSave(tradeToSave, false);
+      // Immediate save
+      performSave(updatedForm, financialsRef.current);
   };
 
   const handleConfirmMissed = () => {
@@ -558,13 +558,20 @@ const TradeDetail: React.FC<TradeDetailProps> = ({ trade, accounts, tagGroups, s
       return `${year}-${month}-${day}T${hours}:${minutes}`;
   };
 
+  // Safe manual back to list (ensures flush)
+  const handleBack = () => {
+      if (saveTimeoutRef.current) clearTimeout(saveTimeoutRef.current);
+      performSave(formDataRef.current, financialsRef.current);
+      onBack();
+  }
+
   return (
     <div className="max-w-7xl mx-auto pb-20 animate-in fade-in duration-300 font-sans -mt-4">
       
       {/* Top Navigation Bar */}
       <div className="flex items-center justify-between py-3 mb-6 border-b border-border sticky top-0 bg-background/95 backdrop-blur z-20">
          <div className="flex items-center gap-4">
-             <button onClick={onBack} className="p-2 hover:bg-surfaceHighlight rounded-full transition-colors text-textMuted hover:text-textMain">
+             <button onClick={handleBack} className="p-2 hover:bg-surfaceHighlight rounded-full transition-colors text-textMuted hover:text-textMain">
                  <ArrowLeft size={20} />
              </button>
              <div>

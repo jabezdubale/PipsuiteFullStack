@@ -144,10 +144,10 @@ export const getTrades = async (userId?: string, accountId?: string): Promise<Tr
     return api<Trade[]>(`/trades${query}`);
 };
 
-export const saveTrade = async (trade: Trade): Promise<Trade[]> => {
+export const saveTrade = async (trade: Trade, balanceChange?: number): Promise<Trade[]> => {
     return api<Trade[]>('/trades', {
         method: 'POST',
-        body: JSON.stringify(trade)
+        body: JSON.stringify({ trade, balanceChange })
     });
 };
 

@@ -10,7 +10,7 @@ interface TradeViewModalProps {
   onClose: () => void;
   onEdit: () => void;
   onDelete: () => void;
-  onSave: (trade: Trade, shouldClose?: boolean) => void;
+  onSave: (trade: Trade, shouldClose?: boolean, balanceChange?: number) => void;
   tagGroups: TagGroup[];
   onUpdateBalance: (amount: number, type: 'deposit' | 'withdraw') => void;
 }
@@ -119,11 +119,6 @@ const TradeViewModal: React.FC<TradeViewModalProps> = ({ trade, account, onClose
       // We set the trade property to true if balance was affected
       updatedTradeData.isBalanceUpdated = !!affectBalance;
 
-      if (affectBalance && onUpdateBalance) {
-          const type = net >= 0 ? 'deposit' : 'withdraw';
-          onUpdateBalance(Math.abs(net), type);
-      }
-
       const finalTrade = {
         ...updatedTradeData,
         pnl: net,
@@ -135,8 +130,10 @@ const TradeViewModal: React.FC<TradeViewModalProps> = ({ trade, account, onClose
         mainPnl: parseFloat(updatedTradeData.mainPnl)
       };
 
+      const balanceChange = affectBalance ? net : 0;
+
       // 4. Save and close internal modal
-      onSave(finalTrade, false);
+      onSave(finalTrade, false, balanceChange);
       setIsCloseModalOpen(false);
   };
 

@@ -391,8 +391,16 @@ app.get('/api/trades', async (req, res) => {
 });
 
 app.post('/api/trades', async (req, res) => {
-    const t = req.body;
+    const { trade, balanceChange } = req.body;
+    // Backwards compatibility if 'trade' wrapper is missing (direct post)
+    const t = trade || req.body;
+    const balanceAdj = parseFloat(balanceChange);
+
+    const client = await req.db.connect();
+
     try {
+        await client.query('BEGIN');
+
         const queryText = `
             INSERT INTO trades (
                 id, account_id, symbol, type, status, outcome,
@@ -420,24 +428,36 @@ app.post('/api/trades', async (req, res) => {
                 tags = EXCLUDED.tags, screenshots = EXCLUDED.screenshots, partials = EXCLUDED.partials,
                 is_deleted = EXCLUDED.is_deleted, deleted_at = EXCLUDED.deleted_at, is_balance_updated = EXCLUDED.is_balance_updated
         `;
-        await req.db.query(queryText, mapTradeToParams(t));
-        // Return updated list using logic similar to GET
-        // For simplicity, we might return just the saved trade or list for account
-        // Assuming client handles list refresh or we return specific account trades:
+        
+        await client.query(queryText, mapTradeToParams(t));
+
+        if (!isNaN(balanceAdj) && balanceAdj !== 0 && t.accountId) {
+            await client.query(
+                'UPDATE accounts SET balance = balance + $1 WHERE id = $2',
+                [balanceAdj, t.accountId]
+            );
+        }
+
+        await client.query('COMMIT');
+
+        // Return updated trades list for the account
         let result;
         if (t.accountId) {
-             result = await req.db.query('SELECT * FROM trades WHERE account_id = $1 ORDER BY entry_date DESC', [t.accountId]);
+             result = await client.query('SELECT * FROM trades WHERE account_id = $1 ORDER BY entry_date DESC', [t.accountId]);
         } else {
-             // Fallback to limit to avoid dumping DB
-             result = await req.db.query('SELECT * FROM trades ORDER BY entry_date DESC LIMIT 100');
+             result = await client.query('SELECT * FROM trades ORDER BY entry_date DESC LIMIT 100');
         }
         res.json(result.rows.map(parseTradeRow));
+
     } catch (err) {
+        await client.query('ROLLBACK');
         if (err.code === '42703' || err.code === '42P01') { 
             await ensureSchema(req.db);
             return res.status(500).json({ error: "Schema updated. Please retry." });
         }
         res.status(500).json({ error: err.message });
+    } finally {
+        client.release();
     }
 });
 

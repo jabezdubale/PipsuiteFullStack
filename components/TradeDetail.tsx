@@ -5,6 +5,8 @@ import { ArrowLeft, Trash2, Plus, X, Upload, ChevronDown, ChevronUp, Clipboard }
 import { getSessionForTime } from '../utils/sessionHelpers';
 import CloseTradeModal from './CloseTradeModal';
 import { calculateAutoTags } from '../utils/autoTagLogic';
+import { toLocalInputString, formatDisplayDate } from '../utils/dateUtils';
+import { compressImage } from '../utils/imageUtils';
 
 const SectionHeader = ({ title }: { title: string }) => (
   <h3 className="text-xs font-bold text-primary uppercase tracking-wider mb-3">{title}</h3>
@@ -58,7 +60,7 @@ interface TradeDetailProps {
   accounts: Account[];
   tagGroups: TagGroup[];
   strategies: string[];
-  onSave: (trade: Trade, shouldClose?: boolean) => void;
+  onSave: (trade: Trade, shouldClose?: boolean, balanceChange?: number) => void;
   onDelete: (id: string) => void;
   onBack: () => void;
   onUpdateBalance?: (amount: number, type: 'deposit' | 'withdraw') => void;
@@ -225,7 +227,8 @@ const TradeDetail: React.FC<TradeDetailProps> = ({ trade, accounts, tagGroups, s
           isBalanceUpdated: currentFormData.isBalanceUpdated
       };
       
-      onSave(updatedTrade, false);
+      // Auto-save does not impact balance
+      onSave(updatedTrade, false, 0);
       
       // Update local tags if changed by calculation
       if (JSON.stringify(updatedTags) !== JSON.stringify(currentFormData.tags)) {
@@ -264,17 +267,12 @@ const TradeDetail: React.FC<TradeDetailProps> = ({ trade, accounts, tagGroups, s
         if (items[i].type.indexOf("image") !== -1) {
           const blob = items[i].getAsFile();
           if (blob) {
-            const reader = new FileReader();
-            reader.onloadend = () => {
-              const base64 = reader.result as string;
-              if (base64) {
+             compressImage(blob).then(base64 => {
                  setFormData((prev: any) => ({
                     ...prev,
                     screenshots: [...prev.screenshots, base64]
                  }));
-              }
-            };
-            reader.readAsDataURL(blob);
+             });
           }
         }
       }
@@ -293,15 +291,11 @@ const TradeDetail: React.FC<TradeDetailProps> = ({ trade, accounts, tagGroups, s
               const imageType = item.types.find(type => type.startsWith('image/'));
               if (imageType) {
                   const blob = await item.getType(imageType);
-                  const reader = new FileReader();
-                  reader.onloadend = () => {
-                      const base64 = reader.result as string;
-                      setFormData((prev: any) => ({
-                        ...prev,
-                        screenshots: [...prev.screenshots, base64]
-                      }));
-                  };
-                  reader.readAsDataURL(blob);
+                  const base64 = await compressImage(blob);
+                  setFormData((prev: any) => ({
+                    ...prev,
+                    screenshots: [...prev.screenshots, base64]
+                  }));
                   return;
               }
           }
@@ -340,10 +334,9 @@ const TradeDetail: React.FC<TradeDetailProps> = ({ trade, accounts, tagGroups, s
   };
 
   const handleConfirmReopen = () => {
-      if (formData.isBalanceUpdated && onUpdateBalance) {
-          const previousPnl = formData.pnl;
-          const type = previousPnl >= 0 ? 'withdraw' : 'deposit';
-          onUpdateBalance(Math.abs(previousPnl), type);
+      let reverseAmount = 0;
+      if (formData.isBalanceUpdated) {
+          reverseAmount = formData.pnl * -1;
       }
 
       const updatedForm = {
@@ -355,15 +348,14 @@ const TradeDetail: React.FC<TradeDetailProps> = ({ trade, accounts, tagGroups, s
       setFormData(updatedForm);
       setIsReopenModalOpen(false);
       
-      // Immediate save
-      performSave(updatedForm, financialsRef.current);
+      const tradeToSave = { ...updatedForm, pnl: 0, status: TradeStatus.OPEN };
+      onSave(tradeToSave, false, reverseAmount);
   };
 
   const handleConfirmMissed = () => {
-      if (formData.outcome === TradeOutcome.CLOSED && formData.isBalanceUpdated && onUpdateBalance) {
-          const previousPnl = formData.pnl;
-          const type = previousPnl >= 0 ? 'withdraw' : 'deposit';
-          onUpdateBalance(Math.abs(previousPnl), type);
+      let reverseAmount = 0;
+      if (formData.outcome === TradeOutcome.CLOSED && formData.isBalanceUpdated) {
+          reverseAmount = formData.pnl * -1;
       }
 
       const updatedForm = {
@@ -390,7 +382,7 @@ const TradeDetail: React.FC<TradeDetailProps> = ({ trade, accounts, tagGroups, s
           pnl: 0,
           status: TradeStatus.MISSED
       };
-      onSave(tradeToSave, false);
+      onSave(tradeToSave, false, reverseAmount);
   };
 
   const handleCloseModalConfirm = (closedData: any) => {
@@ -411,11 +403,6 @@ const TradeDetail: React.FC<TradeDetailProps> = ({ trade, accounts, tagGroups, s
       else if (net < 0) status = TradeStatus.LOSS;
 
       updatedFormData.isBalanceUpdated = !!affectBalance;
-
-      if (affectBalance && onUpdateBalance) {
-          const type = net >= 0 ? 'deposit' : 'withdraw';
-          onUpdateBalance(Math.abs(net), type);
-      }
 
       updatedFormData.pnl = net;
 
@@ -443,8 +430,10 @@ const TradeDetail: React.FC<TradeDetailProps> = ({ trade, accounts, tagGroups, s
         status
       };
 
+      const balanceChange = affectBalance ? net : 0;
+
       setFormData(updatedFormData);
-      onSave(finalTradeToSave, false);
+      onSave(finalTradeToSave, false, balanceChange);
       setIsCloseModalOpen(false);
   };
 
@@ -509,55 +498,18 @@ const TradeDetail: React.FC<TradeDetailProps> = ({ trade, accounts, tagGroups, s
   const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file) {
-      if (file.size > 2 * 1024 * 1024) return alert("Image too large (Max 2MB)");
-      const reader = new FileReader();
-      reader.onloadend = () => {
-        setFormData((prev: any) => ({
+      compressImage(file).then(base64 => {
+          setFormData((prev: any) => ({
             ...prev,
-            screenshots: [...prev.screenshots, reader.result as string]
-        }));
-      };
-      reader.readAsDataURL(file);
+            screenshots: [...prev.screenshots, base64]
+          }));
+      }).catch(e => {
+          console.error(e);
+          alert("Image processing failed.");
+      });
     }
   };
   
-  const formatDisplayDate = (isoString: string) => {
-      if (!isoString) return '';
-      const date = new Date(isoString);
-      if (isNaN(date.getTime())) return '';
-      const d = date.getDate().toString().padStart(2, '0');
-      const m = (date.getMonth() + 1).toString().padStart(2, '0');
-      const y = date.getFullYear();
-      let hours = date.getHours();
-      const ampm = hours >= 12 ? 'PM' : 'AM';
-      hours = hours % 12;
-      hours = hours ? hours : 12; 
-      const h = hours.toString().padStart(2, '0');
-      const min = date.getMinutes().toString().padStart(2, '0');
-      const s = date.getSeconds().toString().padStart(2, '0');
-      const offsetMinutes = date.getTimezoneOffset();
-      const offsetHours = Math.abs(Math.floor(offsetMinutes / 60));
-      const offsetMinsRemainder = Math.abs(offsetMinutes % 60);
-      const sign = offsetMinutes > 0 ? '-' : '+';
-      let offsetString = `UTC${sign}${offsetHours}`;
-      if (offsetMinsRemainder > 0) {
-        offsetString += `:${offsetMinsRemainder.toString().padStart(2, '0')}`;
-      }
-      return `${d}/${m}/${y}, ${h}:${min}:${s} ${ampm} ${offsetString}`;
-  };
-
-  const getInputValue = (isoString: string) => {
-      if (!isoString) return '';
-      const date = new Date(isoString);
-      if (isNaN(date.getTime())) return '';
-      const year = date.getFullYear();
-      const month = (date.getMonth() + 1).toString().padStart(2, '0');
-      const day = date.getDate().toString().padStart(2, '0');
-      const hours = date.getHours().toString().padStart(2, '0');
-      const minutes = date.getMinutes().toString().padStart(2, '0');
-      return `${year}-${month}-${day}T${hours}:${minutes}`;
-  };
-
   // Safe manual back to list (ensures flush)
   const handleBack = () => {
       if (saveTimeoutRef.current) clearTimeout(saveTimeoutRef.current);
@@ -656,7 +608,7 @@ const TradeDetail: React.FC<TradeDetailProps> = ({ trade, accounts, tagGroups, s
                           <div>
                             <MinimalInput 
                                 type="datetime-local" 
-                                value={getInputValue(formData.entryDate)} 
+                                value={toLocalInputString(formData.entryDate)} 
                                 onChange={(e) => handleDateTimeChange('entry', e.target.value)}
                                 disabled={isClosed || isMissed}
                             />
@@ -669,7 +621,7 @@ const TradeDetail: React.FC<TradeDetailProps> = ({ trade, accounts, tagGroups, s
                           <div>
                             <MinimalInput 
                                 type="datetime-local" 
-                                value={getInputValue(formData.exitDate)} 
+                                value={toLocalInputString(formData.exitDate)} 
                                 onChange={(e) => handleDateTimeChange('exit', e.target.value)}
                                 disabled={isClosed || isMissed}
                             />

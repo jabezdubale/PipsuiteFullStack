@@ -18,6 +18,7 @@ import { extractTradeParamsFromImage } from './services/geminiService';
 import { Trade, TradeStats, Account, TradeType, TradeStatus, ASSETS, TagGroup, OrderType, Session, TradeOutcome, User } from './types';
 import { X, ChevronDown, Calculator, TrendingUp, TrendingDown, RefreshCw, Loader2, Upload, Plus, Trash2, Clipboard, ChevronUp, Eraser, User as UserIcon, Database } from 'lucide-react';
 import UserModal from './components/UserModal';
+import { compressImage } from './utils/imageUtils';
 
 function App() {
   const [activeTab, setActiveTab] = useState('dashboard'); 
@@ -234,18 +235,13 @@ function App() {
         if (items[i].type.indexOf("image") !== -1) {
           const blob = items[i].getAsFile();
           if (blob) {
-            const reader = new FileReader();
-            reader.onload = (event) => {
-              const base64 = event.target?.result as string;
-              if (base64) {
-                 // Add to screenshots
+            // Compress before setting
+            compressImage(blob).then(base64 => {
                  setNewTradeForm((prev: any) => ({
                     ...prev,
                     screenshots: [...(prev.screenshots || []), base64]
                  }));
-              }
-            };
-            reader.readAsDataURL(blob);
+            });
           }
         }
       }
@@ -286,12 +282,9 @@ function App() {
   const handleAnalysisFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
       const file = e.target.files?.[0];
       if (file) {
-          const reader = new FileReader();
-          reader.onloadend = () => {
-              const base64 = reader.result as string;
+          compressImage(file).then(base64 => {
               handleAnalyzeImage(base64);
-          };
-          reader.readAsDataURL(file);
+          });
       }
   };
 
@@ -302,12 +295,8 @@ function App() {
               const imageType = item.types.find(type => type.startsWith('image/'));
               if (imageType) {
                   const blob = await item.getType(imageType);
-                  const reader = new FileReader();
-                  reader.onloadend = () => {
-                      const base64 = reader.result as string;
-                      handleAnalyzeImage(base64);
-                  };
-                  reader.readAsDataURL(blob);
+                  const base64 = await compressImage(blob);
+                  handleAnalyzeImage(base64);
                   return;
               }
           }
@@ -388,8 +377,14 @@ function App() {
       return trades.filter(t => {
           if (t.isDeleted) return false;
           // Use Entry Time (entryDate) as primary date
-          const tDate = new Date(t.entryDate || t.createdAt).toLocaleDateString('en-CA');
-          return tDate === selectedDailyDate && t.accountId === selectedAccountId;
+          // Fix: Ensure we match the local date string format from calendar
+          const tDate = new Date(t.entryDate || t.createdAt);
+          const y = tDate.getFullYear();
+          const m = (tDate.getMonth() + 1).toString().padStart(2, '0');
+          const d = tDate.getDate().toString().padStart(2, '0');
+          const dateKey = `${y}-${m}-${d}`;
+          
+          return dateKey === selectedDailyDate && t.accountId === selectedAccountId;
       });
   }, [trades, selectedDailyDate, selectedAccountId]);
 
@@ -431,10 +426,16 @@ function App() {
 
   // --- Async Handlers ---
 
-  const handleSaveTrade = async (trade: Trade, shouldClose: boolean = true) => {
+  const handleSaveTrade = async (trade: Trade, shouldClose: boolean = true, balanceChange: number = 0) => {
     try {
-        const updatedTrades = await saveTrade(trade);
+        const updatedTrades = await saveTrade(trade, balanceChange);
         setTrades(updatedTrades);
+        
+        // If balance changed, refresh accounts
+        if (balanceChange !== 0 && currentUser) {
+            const freshAccounts = await getAccounts(currentUser.id);
+            setAccounts(freshAccounts);
+        }
         
         if (shouldClose) {
             setSubView('list');
@@ -658,19 +659,15 @@ function App() {
   const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file) {
-      if (file.size > 2 * 1024 * 1024) {
-        alert("Image file is too large. Please upload an image smaller than 2MB.");
-        return;
-      }
-      const reader = new FileReader();
-      reader.onloadend = () => {
-        const base64String = reader.result as string;
+      compressImage(file).then(base64String => {
         setNewTradeForm((prev: any) => ({
             ...prev,
             screenshots: [...(prev.screenshots || []), base64String]
         }));
-      };
-      reader.readAsDataURL(file);
+      }).catch(err => {
+          console.error(err);
+          alert("Error processing image.");
+      });
     }
   };
 

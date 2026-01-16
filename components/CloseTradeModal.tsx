@@ -4,6 +4,8 @@ import { TagGroup, Session, TradeOutcome, ASSETS, TradeStatus, TradeType } from 
 import { X, Check, Calculator, Clock, Upload, Clipboard, Trash2, Image as ImageIcon, Info, ChevronUp, ChevronDown, TrendingUp, TrendingDown, Slash } from 'lucide-react';
 import { getSessionForTime } from '../utils/sessionHelpers';
 import { calculateAutoTags } from '../utils/autoTagLogic';
+import { toLocalInputString } from '../utils/dateUtils';
+import { compressImage } from '../utils/imageUtils';
 
 interface CloseTradeModalProps {
   currentData: any; // The current form data from TradeDetail
@@ -110,17 +112,12 @@ const CloseTradeModal: React.FC<CloseTradeModalProps> = ({ currentData, tagGroup
         if (items[i].type.indexOf("image") !== -1) {
           const blob = items[i].getAsFile();
           if (blob) {
-            const reader = new FileReader();
-            reader.onload = (event) => {
-              const base64 = event.target?.result as string;
-              if (base64) {
+             compressImage(blob).then(base64 => {
                  setFormData(prev => ({
                     ...prev,
                     screenshots: [...prev.screenshots, base64]
                  }));
-              }
-            };
-            reader.readAsDataURL(blob);
+             });
           }
         }
       }
@@ -164,20 +161,6 @@ const CloseTradeModal: React.FC<CloseTradeModalProps> = ({ currentData, tagGroup
   }, [netPnl, plannedReward, formData.mainPnl]);
 
   // --- Helpers ---
-  const getInputValue = (isoString: string) => {
-      if (!isoString) return '';
-      const date = new Date(isoString);
-      if (isNaN(date.getTime())) return '';
-      
-      const year = date.getFullYear();
-      const month = (date.getMonth() + 1).toString().padStart(2, '0');
-      const day = date.getDate().toString().padStart(2, '0');
-      const hours = date.getHours().toString().padStart(2, '0');
-      const minutes = date.getMinutes().toString().padStart(2, '0');
-      
-      return `${year}-${month}-${day}T${hours}:${minutes}`;
-  };
-
   const handleDateTimeChange = (field: 'entry' | 'exit', value: string) => {
       if (!value) {
           // If cleared, just update the date/time fields to empty
@@ -223,15 +206,15 @@ const CloseTradeModal: React.FC<CloseTradeModalProps> = ({ currentData, tagGroup
   const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file) {
-      if (file.size > 2 * 1024 * 1024) return alert("Image too large (Max 2MB)");
-      const reader = new FileReader();
-      reader.onloadend = () => {
-        setFormData(prev => ({
+      compressImage(file).then(base64 => {
+          setFormData(prev => ({
             ...prev,
-            screenshots: [...prev.screenshots, reader.result as string]
-        }));
-      };
-      reader.readAsDataURL(file);
+            screenshots: [...prev.screenshots, base64]
+          }));
+      }).catch(e => {
+          console.error(e);
+          alert("Image processing failed.");
+      });
     }
   };
 
@@ -259,15 +242,11 @@ const CloseTradeModal: React.FC<CloseTradeModalProps> = ({ currentData, tagGroup
               const imageType = item.types.find(type => type.startsWith('image/'));
               if (imageType) {
                   const blob = await item.getType(imageType);
-                  const reader = new FileReader();
-                  reader.onloadend = () => {
-                      const base64 = reader.result as string;
-                      setFormData(prev => ({
-                        ...prev,
-                        screenshots: [...prev.screenshots, base64]
-                      }));
-                  };
-                  reader.readAsDataURL(blob);
+                  const base64 = await compressImage(blob);
+                  setFormData(prev => ({
+                    ...prev,
+                    screenshots: [...prev.screenshots, base64]
+                  }));
                   return;
               }
           }
@@ -507,7 +486,7 @@ const CloseTradeModal: React.FC<CloseTradeModalProps> = ({ currentData, tagGroup
                                     <label className="block text-xs font-medium text-textMuted mb-1.5">Entry Time</label>
                                     <input 
                                         type="datetime-local" 
-                                        value={getInputValue(formData.entryDate)} 
+                                        value={toLocalInputString(formData.entryDate)} 
                                         onChange={(e) => handleDateTimeChange('entry', e.target.value)}
                                         className="w-full bg-surface border border-border rounded-lg px-2 py-1.5 text-xs text-textMain focus:outline-none focus:border-primary"
                                     />
@@ -516,7 +495,7 @@ const CloseTradeModal: React.FC<CloseTradeModalProps> = ({ currentData, tagGroup
                                     <label className="block text-xs font-medium text-textMain mb-1.5">Exit Time</label>
                                      <input 
                                         type="datetime-local" 
-                                        value={getInputValue(formData.exitDate)} 
+                                        value={toLocalInputString(formData.exitDate)} 
                                         onChange={(e) => handleDateTimeChange('exit', e.target.value)}
                                         className="w-full bg-surface border border-border rounded-lg px-2 py-1.5 text-xs text-textMain focus:outline-none focus:border-primary"
                                     />

@@ -3,6 +3,7 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { Trade, TradeStatus, MonthlyNoteData } from '../types';
 import { ChevronLeft, ChevronRight, Calendar as CalendarIcon, ChevronDown, PenLine, Save, BarChart2 } from 'lucide-react';
 import { getMonthlyNote, saveMonthlyNote } from '../services/storageService';
+import { getCalendarDateKey } from '../utils/dateUtils';
 
 interface CalendarViewProps {
   trades: Trade[];
@@ -60,12 +61,12 @@ const CalendarView: React.FC<CalendarViewProps> = ({ trades, currentMonth, setCu
       setCurrentMonth(new Date(parseInt(y), parseInt(m) - 1, 1));
   };
 
-  // Organize trades by date
+  // Organize trades by date using consistent local key
   const tradesByDate = useMemo(() => {
       const map: Record<string, Trade[]> = {};
       trades.forEach(trade => {
         const dateSource = trade.entryDate || trade.createdAt;
-        const dateStr = new Date(dateSource).toLocaleDateString('en-CA'); // YYYY-MM-DD
+        const dateStr = getCalendarDateKey(dateSource); // Uses utils for consistency
         if (!map[dateStr]) map[dateStr] = [];
         map[dateStr].push(trade);
       });
@@ -87,24 +88,23 @@ const CalendarView: React.FC<CalendarViewProps> = ({ trades, currentMonth, setCu
       for (let i = 0; i < firstDay; i++) {
           const dayNum = prevMonthLastDay - firstDay + 1 + i;
           const dateObj = new Date(year, month - 1, dayNum);
-          allDays.push({ day: dayNum, date: dateObj, dateStr: dateObj.toLocaleDateString('en-CA'), isOutside: true });
+          allDays.push({ day: dayNum, date: dateObj, dateStr: getCalendarDateKey(dateObj), isOutside: true });
       }
 
       // 2. Current Month Days
       for (let d = 1; d <= daysInMonth; d++) {
           const dateObj = new Date(year, month, d);
-          allDays.push({ day: d, date: dateObj, dateStr: dateObj.toLocaleDateString('en-CA'), isOutside: false });
+          allDays.push({ day: d, date: dateObj, dateStr: getCalendarDateKey(dateObj), isOutside: false });
       }
 
       // 3. Next Month Padding
-      // Ensure we fill complete weeks (chunks of 7)
       const currentCount = allDays.length;
       const remainder = currentCount % 7;
       if (remainder !== 0) {
           const toAdd = 7 - remainder;
           for (let j = 1; j <= toAdd; j++) {
               const dateObj = new Date(year, month + 1, j);
-              allDays.push({ day: j, date: dateObj, dateStr: dateObj.toLocaleDateString('en-CA'), isOutside: true });
+              allDays.push({ day: j, date: dateObj, dateStr: getCalendarDateKey(dateObj), isOutside: true });
           }
       }
 
@@ -150,7 +150,7 @@ const CalendarView: React.FC<CalendarViewProps> = ({ trades, currentMonth, setCu
           {dayTrades.length > 0 && (
             <div className="flex flex-col items-center justify-center flex-1">
                <div className={`text-lg font-bold ${pnlColorClass}`}>
-                 ${Math.abs(dayPnL).toLocaleString()}
+                 {dayPnL < 0 ? '-' : ''}${Math.abs(dayPnL).toLocaleString()}
                </div>
                <div className="text-[10px] text-textMuted uppercase tracking-wider mt-1 flex gap-2">
                  <span>{dayTrades.length} Trades</span>
@@ -169,7 +169,6 @@ const CalendarView: React.FC<CalendarViewProps> = ({ trades, currentMonth, setCu
   };
 
   const renderWeeklyStats = (weekDays: any[]) => {
-      // Calculate stats for the 7 days in this row
       let weeklyPnL = 0;
       let totalTrades = 0;
       let wins = 0;
@@ -204,7 +203,6 @@ const CalendarView: React.FC<CalendarViewProps> = ({ trades, currentMonth, setCu
                   <span>{winRate.toFixed(0)}% WR</span>
               </div>
 
-              {/* Weekly Heatmap / Progress */}
               <div className="flex gap-0.5 h-1.5 w-full bg-border/50 rounded-full overflow-hidden">
                   <div className="h-full bg-profit" style={{ width: `${winRate}%` }}></div>
               </div>
@@ -243,7 +241,6 @@ const CalendarView: React.FC<CalendarViewProps> = ({ trades, currentMonth, setCu
         <div className="flex items-center gap-4">
           <button onClick={prevMonth} className="p-2 bg-surfaceHighlight/30 hover:bg-surfaceHighlight border border-transparent hover:border-border rounded-lg transition-all text-textMuted hover:text-textMain"><ChevronLeft size={20}/></button>
           
-          {/* Enhanced Month Selector Button */}
           <div 
             className="group relative flex items-center justify-center gap-3 px-6 py-2.5 bg-surfaceHighlight/30 hover:bg-surfaceHighlight border border-transparent hover:border-primary/30 rounded-lg transition-all cursor-pointer select-none min-w-[240px] shadow-sm active:scale-95 overflow-hidden"
           >
@@ -268,20 +265,15 @@ const CalendarView: React.FC<CalendarViewProps> = ({ trades, currentMonth, setCu
              <div className="text-right">
                 <p className="text-xs text-textMuted uppercase">Monthly Net P&L</p>
                 <p className={`text-xl font-bold ${monthPnL >= 0 ? 'text-profit' : 'text-loss'}`}>
-                    ${monthPnL.toLocaleString()}
+                    {monthPnL < 0 ? '-' : ''}${Math.abs(monthPnL).toLocaleString()}
                 </p>
              </div>
         </div>
       </div>
 
       <div className="flex flex-col xl:flex-row gap-6 items-start">
-          
-          {/* Main Layout Container */}
           <div className="flex-1 w-full flex gap-4 overflow-x-auto pb-2">
-              
-              {/* 1. Calendar Grid */}
               <div className="flex-1 min-w-[600px] bg-border border border-border rounded-xl overflow-hidden shadow-sm flex flex-col">
-                  {/* Header Row */}
                   <div className="grid grid-cols-7 border-b border-border">
                       {['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].map(day => (
                         <div key={day} className="bg-surfaceHighlight p-3 text-center text-xs font-semibold text-textMuted uppercase border-r border-border last:border-r-0">
@@ -289,7 +281,6 @@ const CalendarView: React.FC<CalendarViewProps> = ({ trades, currentMonth, setCu
                         </div>
                       ))}
                   </div>
-                  {/* Weeks Rows */}
                   <div className="flex-1 bg-background">
                       {weeks.map((weekDays, wIdx) => (
                           <div key={wIdx} className="grid grid-cols-7 border-b border-border last:border-b-0">
@@ -299,7 +290,6 @@ const CalendarView: React.FC<CalendarViewProps> = ({ trades, currentMonth, setCu
                   </div>
               </div>
 
-              {/* 2. Weekly Report Column */}
               <div className="w-48 shrink-0 bg-surface border border-border rounded-xl overflow-hidden shadow-sm flex flex-col self-stretch">
                   <div className="h-[41px] bg-surfaceHighlight p-3 text-center text-xs font-bold text-textMuted uppercase border-b border-border flex items-center justify-center gap-2">
                       <BarChart2 size={14} /> Weekly Report
@@ -312,10 +302,8 @@ const CalendarView: React.FC<CalendarViewProps> = ({ trades, currentMonth, setCu
                       ))}
                   </div>
               </div>
-
           </div>
           
-          {/* 3. Monthly Notes Sidebar */}
           <div className="w-full xl:w-80 shrink-0 bg-surface border border-border rounded-xl overflow-hidden shadow-sm flex flex-col self-stretch min-h-[600px]">
               <div className="h-[41px] bg-surfaceHighlight/50 p-4 border-b border-border flex items-center justify-between">
                   <div className="flex items-center gap-2">
@@ -330,8 +318,6 @@ const CalendarView: React.FC<CalendarViewProps> = ({ trades, currentMonth, setCu
               </div>
               
               <div className="flex-1 overflow-y-auto p-4 space-y-4">
-                  
-                  {/* 1. Monthly Goals */}
                   <div className="space-y-1.5">
                       <label className="text-[10px] uppercase font-bold text-primary tracking-wider flex items-center gap-1">
                           Monthly Goals
@@ -345,7 +331,6 @@ const CalendarView: React.FC<CalendarViewProps> = ({ trades, currentMonth, setCu
                       />
                   </div>
 
-                  {/* 2. Monthly Trade Notes (Main Section) */}
                   <div className="space-y-1.5 flex flex-col flex-1 min-h-[250px]">
                       <label className="text-[10px] uppercase font-bold text-primary tracking-wider flex items-center gap-1">
                           Trade Notes
@@ -359,7 +344,6 @@ const CalendarView: React.FC<CalendarViewProps> = ({ trades, currentMonth, setCu
                       />
                   </div>
 
-                  {/* 3. Review of the Month */}
                   <div className="space-y-1.5">
                       <label className="text-[10px] uppercase font-bold text-primary tracking-wider flex items-center gap-1">
                           Month Review
@@ -372,7 +356,6 @@ const CalendarView: React.FC<CalendarViewProps> = ({ trades, currentMonth, setCu
                           spellCheck={false}
                       />
                   </div>
-
               </div>
           </div>
       </div>

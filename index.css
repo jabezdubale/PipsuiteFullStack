@@ -1,0 +1,60 @@
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  /* Light Mode - Balanced "Soft Gray" */
+  
+  /* Background: Soft Cool Gray (Slate 200) - Distinctly gray, not white */
+  --color-background: 226 232 240; 
+  
+  /* Surface: Matte Light Gray (Slate 100) - Lighter than BG, but not pure white */
+  --color-surface: 241 245 249; 
+  
+  /* Highlight: Slightly darker than surface, blending into background */
+  --color-surface-highlight: 226 232 240; 
+  
+  /* Text: Deep Slate/Gunmetal - High contrast but softer than pure black */
+  --color-text-main: 30 41 59; 
+  
+  /* Muted: Mid Slate */
+  --color-text-muted: 100 116 139; 
+  
+  /* Border: Very subtle gray to avoid "heavy" look */
+  --color-border: 215 220 230; 
+}
+
+.dark {
+  /* Dark Mode Colors (Deep Gray/Black) - Unchanged */
+  --color-background: 15 17 21;
+  --color-surface: 22 27 34;
+  --color-surface-highlight: 33 38 45;
+  --color-text-main: 226 232 240;
+  --color-text-muted: 148 163 184;
+  --color-border: 48 54 61;
+}
+
+@layer base {
+  body {
+    font-family: 'Inter', sans-serif;
+    background-color: rgb(var(--color-background));
+    color: rgb(var(--color-text-main));
+  }
+}
+
+/* Custom Scrollbar */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: rgb(var(--color-border));
+  border-radius: 3px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: rgb(var(--color-text-muted));
+}

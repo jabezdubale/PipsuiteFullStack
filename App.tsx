@@ -12,7 +12,7 @@ import DeleteConfirmationModal from './components/DeleteConfirmationModal';
 import DeleteAccountModal from './components/DeleteAccountModal';
 import TagManager from './components/TagManager';
 import StrategyManager from './components/StrategyManager';
-import { getTrades, saveTrade, deleteTrades, getAccounts, saveAccount, deleteAccount, getTagGroups, saveTagGroups, getStrategies, saveStrategies, saveTrades, getSetting, saveSetting, getUsers, saveUser, deleteUser, adjustAccountBalance } from './services/storageService';
+import { getTrades, saveTrade, deleteTrades, trashTrades, restoreTrades, getAccounts, saveAccount, deleteAccount, getTagGroups, saveTagGroups, getStrategies, saveStrategies, saveTrades, getSetting, saveSetting, getUsers, saveUser, deleteUser, adjustAccountBalance } from './services/storageService';
 import { fetchCurrentPrice, PriceResult } from './services/priceService';
 import { extractTradeParamsFromImage } from './services/geminiService';
 import { Trade, TradeStats, Account, TradeType, TradeStatus, ASSETS, TagGroup, OrderType, Session, TradeOutcome, User } from './types';
@@ -368,7 +368,7 @@ function App() {
     });
   }, [trades, selectedAccountId]);
 
-  const trashTrades = useMemo(() => {
+  const trashTradesList = useMemo(() => {
       return trades.filter(t => t.isDeleted && t.accountId === selectedAccountId);
   }, [trades, selectedAccountId]);
 
@@ -428,8 +428,16 @@ function App() {
 
   const handleSaveTrade = async (trade: Trade, shouldClose: boolean = true, balanceChange: number = 0) => {
     try {
-        const updatedTrades = await saveTrade(trade, balanceChange);
-        setTrades(updatedTrades);
+        const savedTrade = await saveTrade(trade, balanceChange);
+        
+        // Optimistically update local state to avoid UI wipe
+        setTrades(prev => {
+            const exists = prev.find(t => t.id === savedTrade.id);
+            if (exists) {
+                return prev.map(t => t.id === savedTrade.id ? savedTrade : t);
+            }
+            return [savedTrade, ...prev];
+        });
         
         // If balance changed, refresh accounts
         if (balanceChange !== 0 && currentUser) {
@@ -449,7 +457,13 @@ function App() {
   const handleImportTrades = async (newTrades: Trade[]) => {
       try {
           const updatedTrades = await saveTrades(newTrades);
-          setTrades(updatedTrades);
+          // Batch import returns all trades, so we can set it directly? 
+          // Actually backend batch returns *filtered* list. 
+          // Better to refetch or merge. For simplicity, refetch.
+          if (currentUser) {
+              const freshTrades = await getTrades(currentUser.id);
+              setTrades(freshTrades);
+          }
           alert(`Successfully imported ${newTrades.length} trades.`);
       } catch (e) {
           alert("Failed to import trades.");
@@ -470,40 +484,19 @@ function App() {
           const isPermanentDelete = activeTab === 'trash';
 
           if (isPermanentDelete) {
-              const updatedTrades = await deleteTrades(tradesToDelete);
-              setTrades(updatedTrades);
+              await deleteTrades(tradesToDelete);
+              setTrades(prev => prev.filter(t => !tradesToDelete.includes(t.id)));
           } else {
-              const tradesToTrash = trades.filter(t => tradesToDelete.includes(t.id));
+              // Trash trades (Atomic backend call)
+              const updatedTrades = await trashTrades(tradesToDelete, selectedAccountId);
               
-              // Revert balances for trashed trades using atomic adjustment
-              for (const t of tradesToTrash) {
-                  if (t.isBalanceUpdated && t.accountId && t.pnl !== 0) {
-                      // If trade was positive, we subtract (withdraw) from balance
-                      // If trade was negative, we add (deposit) to balance
-                      // So we just subtract the Signed PnL
-                      await adjustAccountBalance(t.accountId, -t.pnl);
-                  }
-              }
-
-              // Update isDeleted flag
-              const updatedTrades = trades.map(t => {
-                  if (tradesToDelete.includes(t.id)) {
-                      return { 
-                          ...t, 
-                          isDeleted: true, 
-                          deletedAt: new Date().toISOString()
-                      };
-                  }
-                  return t;
-              });
+              // Merge updates into local state
+              setTrades(prev => prev.map(t => {
+                  const updated = updatedTrades.find(ut => ut.id === t.id);
+                  return updated ? updated : t;
+              }));
               
-              for (const t of updatedTrades.filter(ut => tradesToDelete.includes(ut.id))) {
-                  await saveTrade(t);
-              }
-              
-              setTrades(updatedTrades);
-              
-              // Refresh accounts to show updated balance
+              // Refresh accounts as balance might change
               if (currentUser) {
                   const freshAccounts = await getAccounts(currentUser.id);
                   setAccounts(freshAccounts);
@@ -527,31 +520,12 @@ function App() {
 
   const handleRestoreTrades = async (ids: string[]) => {
       try {
-          const tradesToRestore = trades.filter(t => ids.includes(t.id));
+          const updatedTrades = await restoreTrades(ids, selectedAccountId);
           
-          for (const t of tradesToRestore) {
-              if (t.isBalanceUpdated && t.pnl !== 0 && t.accountId) {
-                  // Re-apply PnL to balance
-                  await adjustAccountBalance(t.accountId, t.pnl);
-              }
-          }
-
-          const updatedTrades = trades.map(t => {
-              if (ids.includes(t.id)) {
-                  return { 
-                      ...t, 
-                      isDeleted: false, 
-                      deletedAt: undefined,
-                  };
-              }
-              return t;
-          });
-
-          for (const t of updatedTrades.filter(ut => ids.includes(ut.id))) {
-              await saveTrade(t);
-          }
-
-          setTrades(updatedTrades);
+          setTrades(prev => prev.map(t => {
+              const updated = updatedTrades.find(ut => ut.id === t.id);
+              return updated ? updated : t;
+          }));
           
           if (currentUser) {
               const freshAccounts = await getAccounts(currentUser.id);
@@ -634,6 +608,7 @@ function App() {
       
       try {
           if (updatedTrades.length > 0) {
+              // This still uses the batch update
               await saveTrades(updatedTrades);
               // Update local state
               setTrades(prev => prev.map(t => {
@@ -990,7 +965,7 @@ function App() {
       case 'trash':
         return (
           <TradeList 
-            trades={trashTrades}
+            trades={trashTradesList}
             selectedAccountId={selectedAccountId}
             onTradeClick={() => {}} 
             onDeleteTrade={(id) => handleRequestDelete([id])} 

@@ -37,6 +37,7 @@ import {
   Loader2
 } from 'lucide-react';
 import { getSetting, saveSetting } from '../services/storageService';
+import { getCalendarDateKey } from '../utils/dateUtils';
 
 interface DashboardProps {
   stats: TradeStats; 
@@ -262,52 +263,57 @@ const Dashboard: React.FC<DashboardProps> = ({ stats: initialStats, trades, tagG
       return filtered;
   }, [trades, activeTagFilter, activeAssetFilter, startDate, endDate]);
 
+  const closedTrades = useMemo(() => dashboardTrades.filter(t => t.outcome === TradeOutcome.CLOSED), [dashboardTrades]);
+
   const dashboardStats = useMemo(() => {
-      const totalTrades = dashboardTrades.length;
+      // Use ALL filtered trades for Net PnL (to reflect current reality), but calculate win rate on CLOSED only
+      const totalTrades = closedTrades.length;
       if (totalTrades === 0) {
-          return { totalTrades: 0, winRate: 0, netPnL: 0, avgWin: 0, avgLoss: 0, profitFactor: 0 };
+          // If no closed trades, stats are empty except maybe open PnL
+          const openPnL = dashboardTrades.reduce((acc, t) => acc + t.pnl, 0);
+          return { totalTrades: dashboardTrades.length, winRate: 0, netPnL: openPnL, avgWin: 0, avgLoss: 0, profitFactor: 0 };
       }
-      const wins = dashboardTrades.filter(t => t.pnl > 0);
-      const losses = dashboardTrades.filter(t => t.pnl <= 0);
+
+      const wins = closedTrades.filter(t => t.pnl > 0);
+      const losses = closedTrades.filter(t => t.pnl <= 0);
+      
       const totalWin = wins.reduce((a, b) => a + b.pnl, 0);
       const totalLoss = Math.abs(losses.reduce((a, b) => a + b.pnl, 0));
       
-      const netPnL = totalWin - totalLoss;
+      const netPnL = dashboardTrades.reduce((acc, t) => acc + t.pnl, 0); // Include Open PnL
       const winRate = (wins.length / totalTrades) * 100;
       const avgWin = wins.length ? totalWin / wins.length : 0;
       const avgLoss = losses.length ? totalLoss / losses.length : 0;
       const profitFactor = totalLoss === 0 ? totalWin : totalWin / totalLoss;
 
       return { totalTrades, winRate, netPnL, avgWin, avgLoss, profitFactor };
-  }, [dashboardTrades]);
+  }, [dashboardTrades, closedTrades]);
 
   const currentStreak = useMemo(() => {
-      const validTrades = dashboardTrades.filter(t => 
-          t.outcome === TradeOutcome.CLOSED && 
-          (t.status === TradeStatus.WIN || t.status === TradeStatus.LOSS || t.status === TradeStatus.BREAK_EVEN)
-      );
-      const sorted = [...validTrades].sort((a,b) => new Date(b.entryDate).getTime() - new Date(a.entryDate).getTime());
+      // Logic: Only closed trades, sorted by date DESC
+      const validTrades = closedTrades
+          .filter(t => t.status === TradeStatus.WIN || t.status === TradeStatus.LOSS || t.status === TradeStatus.BREAK_EVEN)
+          .sort((a,b) => new Date(b.entryDate).getTime() - new Date(a.entryDate).getTime());
       
-      if (sorted.length === 0) return { count: 0, type: 'neutral' };
+      if (validTrades.length === 0) return { count: 0, type: 'neutral' };
 
-      const first = sorted[0];
+      const first = validTrades[0];
       const type = first.pnl > 0 ? 'WIN' : first.pnl < 0 ? 'LOSS' : 'BE';
       if (type === 'BE') return { count: 0, type: 'neutral' };
 
       let count = 0;
-      for (const t of sorted) {
+      for (const t of validTrades) {
           const tType = t.pnl > 0 ? 'WIN' : t.pnl < 0 ? 'LOSS' : 'BE';
           if (tType === type) count++;
           else break;
       }
       return { count, type };
-  }, [dashboardTrades]);
+  }, [closedTrades]);
 
   const avgRRRatio = useMemo(() => {
-      const validTrades = dashboardTrades.filter(t => t.outcome === TradeOutcome.CLOSED);
       let totalRR = 0;
       let count = 0;
-      validTrades.forEach(t => {
+      closedTrades.forEach(t => {
           if (!t.entryPrice || !t.stopLoss || !t.takeProfit) return;
           const risk = Math.abs(t.entryPrice - t.stopLoss);
           const reward = Math.abs(t.takeProfit - t.entryPrice);
@@ -317,20 +323,21 @@ const Dashboard: React.FC<DashboardProps> = ({ stats: initialStats, trades, tagG
           count++;
       });
       return count > 0 ? (totalRR / count).toFixed(2) : '0.00';
-  }, [dashboardTrades]);
+  }, [closedTrades]);
 
   const heatmapData = useMemo(() => {
       const data: Record<string, number> = {};
       dashboardTrades.forEach(t => {
-          const date = new Date(t.entryDate).toISOString().split('T')[0];
-          data[date] = (data[date] || 0) + t.pnl;
+          // Use consistent local date key
+          const dateStr = getCalendarDateKey(t.entryDate || t.createdAt);
+          data[dateStr] = (data[dateStr] || 0) + t.pnl;
       });
       return data;
   }, [dashboardTrades]);
 
   const hourlyData = useMemo(() => {
       const map = new Array(24).fill(0);
-      dashboardTrades.forEach(t => {
+      closedTrades.forEach(t => {
           const h = new Date(t.entryDate).getHours();
           map[h] += t.pnl;
       });
@@ -343,21 +350,21 @@ const Dashboard: React.FC<DashboardProps> = ({ stats: initialStats, trades, tagG
           }
           return { hour: label, pnl: val, sortIndex: h };
       });
-  }, [dashboardTrades, hourlyFormat12]);
+  }, [closedTrades, hourlyFormat12]);
 
   const dailyData = useMemo(() => {
       const days = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
       const map = new Array(7).fill(0);
-      dashboardTrades.forEach(t => {
+      closedTrades.forEach(t => {
           const d = new Date(t.entryDate).getDay();
           map[d] += t.pnl;
       });
       return [1,2,3,4,5].map(d => ({ day: days[d], pnl: map[d] }));
-  }, [dashboardTrades]);
+  }, [closedTrades]);
 
   const expectancyData = useMemo(() => {
       const groups: Record<string, Trade[]> = {};
-      dashboardTrades.forEach(t => {
+      closedTrades.forEach(t => {
           const s = t.setup || 'No Setup';
           if (!groups[s]) groups[s] = [];
           groups[s].push(t);
@@ -381,7 +388,7 @@ const Dashboard: React.FC<DashboardProps> = ({ stats: initialStats, trades, tagG
           result = result.slice(0, 8);
       }
       return result;
-  }, [dashboardTrades, visibleSetups]);
+  }, [closedTrades, visibleSetups]);
 
   const allSetups = useMemo(() => {
       const s = new Set<string>();
@@ -391,7 +398,7 @@ const Dashboard: React.FC<DashboardProps> = ({ stats: initialStats, trades, tagG
 
   const patienceData = useMemo(() => {
       // Must filter out open trades or missing entry/exit dates to avoid NaN
-      const sorted = [...dashboardTrades]
+      const sorted = [...closedTrades]
         .filter(t => t.exitDate && t.entryDate) 
         .sort((a,b) => new Date(a.entryDate).getTime() - new Date(b.entryDate).getTime());
       
@@ -441,7 +448,7 @@ const Dashboard: React.FC<DashboardProps> = ({ stats: initialStats, trades, tagG
             pnl: bucketPnl[range] 
         }))
         .filter(d => d.count >= 0); 
-  }, [dashboardTrades]);
+  }, [closedTrades]);
 
   const holdTimeDistributionData = useMemo(() => {
       const buckets = {
@@ -451,7 +458,7 @@ const Dashboard: React.FC<DashboardProps> = ({ stats: initialStats, trades, tagG
       
       const bucketPnl = { ...buckets };
 
-      dashboardTrades.forEach(t => {
+      closedTrades.forEach(t => {
           if (!t.exitDate || !t.entryDate) return;
           const diffMs = new Date(t.exitDate).getTime() - new Date(t.entryDate).getTime();
           const diffMins = diffMs / 1000 / 60;
@@ -484,10 +491,10 @@ const Dashboard: React.FC<DashboardProps> = ({ stats: initialStats, trades, tagG
             pnl: bucketPnl[range] 
         }))
         .filter(d => d.count >= 0);
-  }, [dashboardTrades]);
+  }, [closedTrades]);
 
   const holdTimeData = useMemo(() => {
-      return dashboardTrades
+      return closedTrades
           .filter(t => t.exitDate)
           .map(t => {
               const start = new Date(t.entryDate).getTime();
@@ -499,12 +506,12 @@ const Dashboard: React.FC<DashboardProps> = ({ stats: initialStats, trades, tagG
               };
           })
           .filter(d => d.minutes > 0 && d.minutes < 1440);
-  }, [dashboardTrades]);
+  }, [closedTrades]);
 
   const calculateMatrixStats = (items: string[], getItems: (t: Trade) => string[]): Record<string, MatrixStats> => {
       const stats: Record<string, MatrixStats> = {};
       items.forEach(i => { stats[i] = { count: 0, wins: 0, pnl: 0 }; });
-      dashboardTrades.forEach(t => { 
+      closedTrades.forEach(t => { 
           getItems(t).forEach(item => {
               if (!stats[item]) stats[item] = { count: 0, wins: 0, pnl: 0 };
               const stat = stats[item];
@@ -519,12 +526,12 @@ const Dashboard: React.FC<DashboardProps> = ({ stats: initialStats, trades, tagG
   const tagStats = useMemo(() => {
       const allTags = tagGroups.flatMap(g => g.tags);
       return calculateMatrixStats(allTags, (t) => t.tags);
-  }, [dashboardTrades, tagGroups]);
+  }, [closedTrades, tagGroups]);
 
   const assetStats = useMemo(() => {
-      const allAssets = Array.from(new Set<string>(dashboardTrades.map(t => t.symbol)));
+      const allAssets = Array.from(new Set<string>(closedTrades.map(t => t.symbol)));
       return calculateMatrixStats(allAssets, (t) => [t.symbol]);
-  }, [dashboardTrades, trades]);
+  }, [closedTrades]);
 
   const toggleTagFilter = (tag: string) => {
       setActiveTagFilter(prev => prev.includes(tag) ? prev.filter(t => t !== tag) : [...prev, tag]);
@@ -578,7 +585,8 @@ const Dashboard: React.FC<DashboardProps> = ({ stats: initialStats, trades, tagG
           const weekDays = [];
           for (let d = 0; d < 7; d++) {
               const iterDate = new Date(startDateCalc); 
-              const dateStr = iterDate.toISOString().split('T')[0];
+              // Uses consistent local YYYY-MM-DD key logic
+              const dateStr = getCalendarDateKey(iterDate);
               const pnl = heatmapData[dateStr];
               
               let bg = 'bg-surfaceHighlight';

@@ -130,7 +130,12 @@ const TradeViewModal: React.FC<TradeViewModalProps> = ({ trade, account, onClose
         mainPnl: parseFloat(updatedTradeData.mainPnl)
       };
 
-      const balanceChange = affectBalance ? net : 0;
+      // Calculate DELTA for balance update to support re-editing
+      // If it was already updated, we subtract the old PnL (revert) and add the new PnL (apply)
+      // Or simply: New Effect - Old Effect
+      const oldBalanceEffect = trade.isBalanceUpdated ? (trade.pnl || 0) : 0;
+      const newBalanceEffect = affectBalance ? net : 0;
+      const balanceChange = newBalanceEffect - oldBalanceEffect;
 
       // 4. Save and close internal modal
       onSave(finalTrade, false, balanceChange);

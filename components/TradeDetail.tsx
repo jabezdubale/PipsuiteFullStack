@@ -336,6 +336,7 @@ const TradeDetail: React.FC<TradeDetailProps> = ({ trade, accounts, tagGroups, s
   const handleConfirmReopen = () => {
       let reverseAmount = 0;
       if (formData.isBalanceUpdated) {
+          // Revert balance: subtract the PnL that was added
           reverseAmount = formData.pnl * -1;
       }
 
@@ -430,7 +431,12 @@ const TradeDetail: React.FC<TradeDetailProps> = ({ trade, accounts, tagGroups, s
         status
       };
 
-      const balanceChange = affectBalance ? net : 0;
+      // Calculate DELTA for balance update to support re-editing
+      // If it was already updated, we subtract the old PnL (revert) and add the new PnL (apply)
+      // Or simply: New Effect - Old Effect
+      const oldBalanceEffect = formData.isBalanceUpdated ? (formData.pnl || 0) : 0;
+      const newBalanceEffect = affectBalance ? net : 0;
+      const balanceChange = newBalanceEffect - oldBalanceEffect;
 
       setFormData(updatedFormData);
       onSave(finalTradeToSave, false, balanceChange);

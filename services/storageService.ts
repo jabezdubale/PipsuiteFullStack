@@ -144,29 +144,45 @@ export const getTrades = async (userId?: string, accountId?: string): Promise<Tr
     return api<Trade[]>(`/trades${query}`);
 };
 
-export const saveTrade = async (trade: Trade, balanceChange?: number): Promise<Trade[]> => {
-    return api<Trade[]>('/trades', {
+// Now returns a SINGLE trade object
+export const saveTrade = async (trade: Trade, balanceChange?: number): Promise<Trade> => {
+    return api<Trade>('/trades', {
         method: 'POST',
         body: JSON.stringify({ trade, balanceChange })
     });
 };
 
+// Batch import still returns a list
 export const saveTrades = async (newTrades: Trade[]): Promise<Trade[]> => {
-    // Uses the batch import endpoint for efficiency and reliability
     return api<Trade[]>('/trades/batch', {
         method: 'POST',
         body: JSON.stringify({ trades: newTrades })
     });
 };
 
-export const deleteTrade = async (id: string): Promise<Trade[]> => {
-    return api<Trade[]>(`/trades/${id}`, { method: 'DELETE' });
+export const deleteTrade = async (id: string): Promise<{ success: boolean, id: string }> => {
+    return api<{ success: boolean, id: string }>(`/trades/${id}`, { method: 'DELETE' });
 };
 
 export const deleteTrades = async (ids: string[]): Promise<Trade[]> => {
+    // This is permanent delete
     return api<Trade[]>('/trades/batch', {
         method: 'DELETE',
         body: JSON.stringify({ ids })
+    });
+};
+
+export const trashTrades = async (ids: string[], accountId?: string): Promise<Trade[]> => {
+    return api<Trade[]>('/trades/trash', {
+        method: 'POST',
+        body: JSON.stringify({ ids, accountId })
+    });
+};
+
+export const restoreTrades = async (ids: string[], accountId?: string): Promise<Trade[]> => {
+    return api<Trade[]>('/trades/restore', {
+        method: 'POST',
+        body: JSON.stringify({ ids, accountId })
     });
 };
 

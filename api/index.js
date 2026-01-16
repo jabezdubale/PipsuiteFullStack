@@ -440,14 +440,9 @@ app.post('/api/trades', async (req, res) => {
 
         await client.query('COMMIT');
 
-        // Return updated trades list for the account
-        let result;
-        if (t.accountId) {
-             result = await client.query('SELECT * FROM trades WHERE account_id = $1 ORDER BY entry_date DESC', [t.accountId]);
-        } else {
-             result = await client.query('SELECT * FROM trades ORDER BY entry_date DESC LIMIT 100');
-        }
-        res.json(result.rows.map(parseTradeRow));
+        // Return ONLY the saved trade to avoid state wiping
+        const savedTrade = await client.query('SELECT * FROM trades WHERE id = $1', [t.id]);
+        res.json(parseTradeRow(savedTrade.rows[0]));
 
     } catch (err) {
         await client.query('ROLLBACK');
@@ -455,6 +450,98 @@ app.post('/api/trades', async (req, res) => {
             await ensureSchema(req.db);
             return res.status(500).json({ error: "Schema updated. Please retry." });
         }
+        res.status(500).json({ error: err.message });
+    } finally {
+        client.release();
+    }
+});
+
+// Atomic Trash
+app.post('/api/trades/trash', async (req, res) => {
+    const { ids, accountId } = req.body;
+    if (!ids || !ids.length) return res.status(400).json({ error: "No IDs provided" });
+
+    const client = await req.db.connect();
+    try {
+        await client.query('BEGIN');
+
+        // 1. Get trades to be trashed to calculate balance reversal
+        const tradesRes = await client.query('SELECT * FROM trades WHERE id = ANY($1)', [ids]);
+        const tradesToTrash = tradesRes.rows;
+
+        // 2. Calculate balance impact
+        let totalReversal = 0;
+        for (const row of tradesToTrash) {
+            const t = parseTradeRow(row);
+            if (t.isBalanceUpdated && t.pnl !== 0) {
+                // If trade was +$100, we need to subtract 100.
+                // If trade was -$50, we need to add 50.
+                totalReversal -= t.pnl;
+            }
+        }
+
+        // 3. Mark as deleted
+        const now = new Date();
+        await client.query('UPDATE trades SET is_deleted = true, deleted_at = $1 WHERE id = ANY($2)', [now, ids]);
+
+        // 4. Update Balance
+        if (accountId && totalReversal !== 0) {
+            await client.query('UPDATE accounts SET balance = balance + $1 WHERE id = $2', [totalReversal, accountId]);
+        }
+
+        await client.query('COMMIT');
+        
+        // Return updated list of IDs or the updated trades
+        // For simplicity, return the updated trades
+        const result = await client.query('SELECT * FROM trades WHERE id = ANY($1)', [ids]);
+        res.json(result.rows.map(parseTradeRow));
+
+    } catch(err) {
+        await client.query('ROLLBACK');
+        res.status(500).json({ error: err.message });
+    } finally {
+        client.release();
+    }
+});
+
+// Atomic Restore
+app.post('/api/trades/restore', async (req, res) => {
+    const { ids, accountId } = req.body;
+    if (!ids || !ids.length) return res.status(400).json({ error: "No IDs provided" });
+
+    const client = await req.db.connect();
+    try {
+        await client.query('BEGIN');
+
+        // 1. Get trades to restore
+        const tradesRes = await client.query('SELECT * FROM trades WHERE id = ANY($1)', [ids]);
+        const tradesToRestore = tradesRes.rows;
+
+        // 2. Calculate balance application
+        let totalApplication = 0;
+        for (const row of tradesToRestore) {
+            const t = parseTradeRow(row);
+            if (t.isBalanceUpdated && t.pnl !== 0) {
+                // Re-apply PnL
+                totalApplication += t.pnl;
+            }
+        }
+
+        // 3. Unmark deleted
+        await client.query('UPDATE trades SET is_deleted = false, deleted_at = NULL WHERE id = ANY($1)', [ids]);
+
+        // 4. Update Balance
+        if (accountId && totalApplication !== 0) {
+            await client.query('UPDATE accounts SET balance = balance + $1 WHERE id = $2', [totalApplication, accountId]);
+        }
+
+        await client.query('COMMIT');
+        
+        const result = await client.query('SELECT * FROM trades WHERE id = ANY($1)', [ids]);
+        res.json(result.rows.map(parseTradeRow));
+
+    } catch(err) {
+        await client.query('ROLLBACK');
         res.status(500).json({ error: err.message });
     } finally {
         client.release();
@@ -525,11 +612,6 @@ app.delete('/api/trades/batch', async (req, res) => {
     const { ids } = req.body;
     try {
         await req.db.query('DELETE FROM trades WHERE id = ANY($1)', [ids]);
-        // Return empty list or status check. Usually better to return status.
-        // For compatibility with frontend expecting updated list, we return empty list or fetch something?
-        // Frontend logic does setTrades(updatedTrades), so returning remaining trades is safer?
-        // Let's assume frontend refreshes or handles it.
-        // We will return a generic success for now or simple list.
         res.json([]);
     } catch (err) {
         res.status(500).json({ error: err.message });
@@ -540,7 +622,7 @@ app.delete('/api/trades/:id', async (req, res) => {
     const { id } = req.params;
     try {
         await req.db.query('DELETE FROM trades WHERE id = $1', [id]);
-        res.json([]); 
+        res.json({ success: true, id }); 
     } catch (err) {
         res.status(500).json({ error: err.message });
     }

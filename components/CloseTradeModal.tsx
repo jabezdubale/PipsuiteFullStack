@@ -1,7 +1,7 @@
 
 import React, { useState, useMemo, useEffect, useRef } from 'react';
 import { TagGroup, Session, TradeOutcome, ASSETS, TradeStatus, TradeType } from '../types';
-import { X, Check, Calculator, Clock, Upload, Clipboard, Image as ImageIcon, Info, ChevronUp, ChevronDown, TrendingUp, TrendingDown, Slash } from 'lucide-react';
+import { X, Check, Calculator, Clock, Upload, Clipboard, Trash2, Image as ImageIcon, Info, ChevronUp, ChevronDown, TrendingUp, TrendingDown, Slash } from 'lucide-react';
 import { getSessionForTime } from '../utils/sessionHelpers';
 import { calculateAutoTags } from '../utils/autoTagLogic';
 
@@ -16,8 +16,7 @@ const CloseTradeModal: React.FC<CloseTradeModalProps> = ({ currentData, tagGroup
   // Initialize state with current form data, defaulting exit values if not present
   const [formData, setFormData] = useState({
     mainPnl: currentData.mainPnl || '',
-    fees: currentData.fees ? currentData.fees.toString() : '0', // Manual Fees
-    deltaFromPland: currentData.deltaFromPland ? currentData.deltaFromPland.toString() : '0', // Calculated Gap
+    fees: currentData.fees ? currentData.fees.toString() : '0',
     exitPrice: currentData.exitPrice || '',
     entryPrice: currentData.entryPrice || '',
     
@@ -154,13 +153,13 @@ const CloseTradeModal: React.FC<CloseTradeModalProps> = ({ currentData, tagGroup
       return 0;
   }, [currentData]);
 
-  // Delta from Plan Calculation (Replaces old 'Fees' calc)
+  // Fee Calculation Replication (Planned Reward - Net PnL)
   useEffect(() => {
       if (formData.mainPnl === '') return; // Don't auto-calc if empty
       
       if (plannedReward > 0) {
-          const calcDelta = plannedReward - netPnl;
-          setFormData(prev => ({ ...prev, deltaFromPland: calcDelta.toFixed(2) }));
+          const calcFees = plannedReward - netPnl;
+          setFormData(prev => ({ ...prev, fees: calcFees.toFixed(2) }));
       }
   }, [netPnl, plannedReward, formData.mainPnl]);
 
@@ -425,116 +424,204 @@ const CloseTradeModal: React.FC<CloseTradeModalProps> = ({ currentData, tagGroup
                                 </div>
                             </div>
 
-                            {/* Fees Inputs */}
-                            <div className="grid grid-cols-2 gap-4">
-                                <div>
-                                    <label className="block text-xs font-medium text-textMuted mb-1.5 flex justify-between">
-                                        <span>Fees / Swap</span>
-                                        <span className="text-[10px] opacity-60">Manual</span>
-                                    </label>
-                                    <div className="relative">
-                                        <span className="absolute left-3 top-1/2 -translate-y-1/2 text-textMuted">$</span>
-                                        <input 
-                                            type="number" 
-                                            step="any"
-                                            value={formData.fees}
-                                            onChange={(e) => setFormData({...formData, fees: e.target.value})}
-                                            className="w-full bg-surface border border-border rounded-lg pl-7 pr-3 py-2 text-sm text-loss font-medium focus:outline-none focus:ring-1 focus:ring-loss"
-                                            placeholder="0.00"
-                                        />
-                                    </div>
-                                </div>
-                                <div>
-                                    <label className="block text-xs font-medium text-textMuted mb-1.5 flex justify-between">
-                                        <span>Plan Delta</span>
-                                        <span className="text-[10px] opacity-60">Calc</span>
-                                    </label>
-                                    <div className="relative">
-                                        <span className="absolute left-3 top-1/2 -translate-y-1/2 text-textMuted">$</span>
-                                        <input 
-                                            type="number" 
-                                            step="any"
-                                            value={formData.deltaFromPland}
-                                            readOnly
-                                            className="w-full bg-surfaceHighlight/30 border border-border/40 rounded-lg pl-7 pr-3 py-2 text-sm text-textMain focus:outline-none cursor-default"
-                                        />
-                                    </div>
+                            {/* Fees Input */}
+                            <div>
+                                <label className="block text-xs font-medium text-textMuted mb-1.5 flex justify-between">
+                                    <span>Fees / Commission</span>
+                                    <span className="text-[10px] opacity-60">Auto-calcs from (Planned - Net)</span>
+                                </label>
+                                <div className="relative">
+                                    <span className="absolute left-3 top-1/2 -translate-y-1/2 text-textMuted">$</span>
+                                    <input 
+                                        type="number" 
+                                        step="any"
+                                        value={formData.fees}
+                                        readOnly
+                                        className="w-full bg-surfaceHighlight/50 border border-border/40 rounded-lg pl-7 pr-3 py-2 text-sm text-textMuted font-medium focus:outline-none cursor-default"
+                                        placeholder="0.00"
+                                    />
                                 </div>
                             </div>
                         </div>
                     </div>
 
-                    {/* Exit Date & Time */}
                     <div>
-                        <h4 className="text-xs font-bold text-primary uppercase tracking-wider mb-4 flex items-center gap-2">
-                           <Clock size={14} /> Exit Time
+                         <h4 className="text-xs font-bold text-primary uppercase tracking-wider mb-4 flex items-center gap-2">
+                           <Clock size={14} /> Price & Time
                         </h4>
+                        
                         <div className="bg-surfaceHighlight/20 rounded-lg p-4 space-y-4 border border-border/40">
-                             <div className="grid grid-cols-2 gap-4">
-                                 <div>
-                                     <label className="block text-xs font-medium text-textMuted mb-1.5">Exit Price</label>
-                                     <div className="flex gap-2">
-                                         <input 
-                                             type="number" 
-                                             step="any"
-                                             value={formData.exitPrice}
-                                             onChange={(e) => setFormData({...formData, exitPrice: e.target.value})}
-                                             className="w-full bg-surface border border-border rounded-lg px-3 py-2 text-sm text-textMain focus:ring-1 focus:ring-primary outline-none"
-                                             placeholder="-"
-                                         />
-                                         {/* Buttons to quick fill TP/SL/Entry */}
-                                         <div className="flex flex-col gap-0.5">
-                                             <button type="button" onClick={() => handleFillPrice('TP')} className="text-[9px] bg-surfaceHighlight px-1.5 rounded hover:text-profit" title="Fill TP">TP</button>
-                                             <button type="button" onClick={() => handleFillPrice('SL')} className="text-[9px] bg-surfaceHighlight px-1.5 rounded hover:text-loss" title="Fill SL">SL</button>
-                                             <button type="button" onClick={() => handleFillPrice('EN')} className="text-[9px] bg-surfaceHighlight px-1.5 rounded" title="Fill Entry">EN</button>
-                                         </div>
-                                     </div>
-                                 </div>
-                                 <div>
-                                      <label className="block text-xs font-medium text-textMuted mb-1.5">Exit Date/Time</label>
-                                      <input 
-                                          type="datetime-local"
-                                          value={getInputValue(formData.exitDate)}
-                                          onChange={(e) => handleDateTimeChange('exit', e.target.value)}
-                                          className="w-full bg-surface border border-border rounded-lg px-3 py-2 text-sm text-textMain focus:ring-1 focus:ring-primary outline-none"
-                                      />
-                                 </div>
-                             </div>
-                             
-                             <div className="flex items-center gap-4">
-                                 <div className="flex-1">
-                                     <label className="block text-xs font-medium text-textMuted mb-1.5">Session</label>
+                            <div className="grid grid-cols-2 gap-4">
+                                <div>
+                                    <label className="block text-xs font-medium text-textMuted mb-1.5">Entry Price</label>
+                                    <div className="w-full bg-surfaceHighlight/50 border border-border/40 rounded-lg px-3 py-2 text-sm text-textMain font-mono opacity-70">
+                                        {formData.entryPrice}
+                                    </div>
+                                </div>
+                                <div>
+                                    <div className="flex justify-between items-center mb-1.5">
+                                        <label className="block text-xs font-medium text-textMain">Exit Price</label>
+                                        <div className="flex gap-1.5">
+                                            <button 
+                                                type="button"
+                                                onClick={() => handleFillPrice('EN')}
+                                                className="px-1.5 py-0.5 bg-primary/10 hover:bg-primary/20 text-primary border border-primary/20 rounded text-[10px] font-bold transition-colors"
+                                                title={`Use Entry: ${currentData.entryPrice}`}
+                                            >
+                                                EN
+                                            </button>
+                                            {currentData.takeProfit && (
+                                                <button 
+                                                    type="button"
+                                                    onClick={() => handleFillPrice('TP')}
+                                                    className="px-1.5 py-0.5 bg-profit/10 hover:bg-profit/20 text-profit border border-profit/20 rounded text-[10px] font-bold transition-colors"
+                                                    title={`Use TP: ${currentData.takeProfit}`}
+                                                >
+                                                    TP
+                                                </button>
+                                            )}
+                                            {currentData.stopLoss && (
+                                                <button 
+                                                    type="button"
+                                                    onClick={() => handleFillPrice('SL')}
+                                                    className="px-1.5 py-0.5 bg-loss/10 hover:bg-loss/20 text-loss border border-loss/20 rounded text-[10px] font-bold transition-colors"
+                                                    title={`Use SL: ${currentData.stopLoss}`}
+                                                >
+                                                    SL
+                                                </button>
+                                            )}
+                                        </div>
+                                    </div>
+                                    <input 
+                                        type="number"
+                                        step="any"
+                                        value={formData.exitPrice}
+                                        onChange={(e) => setFormData({...formData, exitPrice: e.target.value})}
+                                        className="w-full bg-surface border border-border rounded-lg px-3 py-2 text-sm text-textMain font-mono focus:ring-1 focus:ring-primary outline-none"
+                                    />
+                                </div>
+                            </div>
+
+                            <div className="grid grid-cols-2 gap-4">
+                                <div>
+                                    <label className="block text-xs font-medium text-textMuted mb-1.5">Entry Time</label>
+                                    <input 
+                                        type="datetime-local" 
+                                        value={getInputValue(formData.entryDate)} 
+                                        onChange={(e) => handleDateTimeChange('entry', e.target.value)}
+                                        className="w-full bg-surface border border-border rounded-lg px-2 py-1.5 text-xs text-textMain focus:outline-none focus:border-primary"
+                                    />
+                                </div>
+                                <div>
+                                    <label className="block text-xs font-medium text-textMain mb-1.5">Exit Time</label>
                                      <input 
-                                          type="text"
-                                          value={formData.exitSession}
-                                          readOnly
-                                          className="w-full bg-surfaceHighlight/30 border border-border/40 rounded-lg px-3 py-2 text-sm text-textMuted cursor-default"
-                                     />
-                                 </div>
-                             </div>
+                                        type="datetime-local" 
+                                        value={getInputValue(formData.exitDate)} 
+                                        onChange={(e) => handleDateTimeChange('exit', e.target.value)}
+                                        className="w-full bg-surface border border-border rounded-lg px-2 py-1.5 text-xs text-textMain focus:outline-none focus:border-primary"
+                                    />
+                                </div>
+                            </div>
                         </div>
                     </div>
                 </div>
 
-                {/* RIGHT: Journal & Media */}
+                {/* RIGHT: Journaling & Media */}
                 <div className="space-y-6">
-                    {/* Tags */}
                     <div>
-                        <label className="text-xs font-bold text-textMain uppercase tracking-wider mb-2 block">Tags</label>
-                        <div className="bg-surfaceHighlight/20 rounded-lg p-4 border border-border/40 space-y-3">
-                             {/* Active Tags */}
-                             <div className="flex flex-wrap gap-2">
-                                  {formData.tags.map(tag => (
-                                      <span key={tag} className="inline-flex items-center gap-1 px-2 py-1 rounded-md text-[10px] bg-primary/10 text-primary border border-primary/20">
+                        <h4 className="text-xs font-bold text-primary uppercase tracking-wider mb-4">Journal</h4>
+                        <div className="space-y-4">
+                            <div>
+                                <label className="block text-xs font-medium text-textMuted mb-1.5">Technical Notes</label>
+                                <textarea 
+                                    value={formData.notes}
+                                    onChange={(e) => setFormData({...formData, notes: e.target.value})}
+                                    className="w-full bg-surface border border-border rounded-lg p-3 text-sm text-textMain focus:ring-1 focus:ring-primary outline-none min-h-[100px] resize-none"
+                                    placeholder="Final thoughts on the setup..."
+                                />
+                            </div>
+                            <div>
+                                <label className="block text-xs font-medium text-textMuted mb-1.5">Emotional Notes</label>
+                                <textarea 
+                                    value={formData.emotionalNotes}
+                                    onChange={(e) => setFormData({...formData, emotionalNotes: e.target.value})}
+                                    className="w-full bg-surface border border-border rounded-lg p-3 text-sm text-textMain focus:ring-1 focus:ring-primary outline-none min-h-[80px] resize-none"
+                                    placeholder="How did you feel closing this?"
+                                />
+                            </div>
+                        </div>
+                    </div>
+                    
+                    {/* Media Upload Section */}
+                    <div>
+                         <h4 className="text-xs font-bold text-primary uppercase tracking-wider mb-4 flex items-center gap-2">
+                             <ImageIcon size={14} /> Evidence
+                         </h4>
+                         <div className="bg-surfaceHighlight/20 border border-border/40 rounded-lg p-3">
+                             {/* Screenshots Grid */}
+                             {formData.screenshots.length > 0 && (
+                                <div className="grid grid-cols-4 gap-2 mb-3">
+                                    {formData.screenshots.map((url, idx) => (
+                                        <div key={idx} className="relative group aspect-square bg-black/50 rounded overflow-hidden border border-border">
+                                            <img src={url} alt={`Screenshot ${idx}`} className="w-full h-full object-cover" />
+                                            <button 
+                                                onClick={() => handleRemoveImage(idx)}
+                                                className="absolute top-1 right-1 bg-black/60 hover:bg-red-600 text-white p-1 rounded-full opacity-0 group-hover:opacity-100 transition-opacity"
+                                            >
+                                                <Trash2 size={10} />
+                                            </button>
+                                        </div>
+                                    ))}
+                                </div>
+                             )}
+
+                             {/* Actions */}
+                             <div className="flex gap-2">
+                                <div className="relative flex-1">
+                                    <input 
+                                        type="file" 
+                                        ref={fileInputRef} 
+                                        className="hidden" 
+                                        accept="image/*"
+                                        onChange={handleFileUpload}
+                                    />
+                                    <button 
+                                        onClick={() => fileInputRef.current?.click()}
+                                        className="w-full py-2 bg-surface hover:bg-surfaceHighlight border border-border/60 hover:border-primary/50 text-textMuted hover:text-textMain rounded text-xs flex items-center justify-center gap-2 transition-colors"
+                                    >
+                                        <Upload size={12} /> Upload File
+                                    </button>
+                                </div>
+                                <button 
+                                    onClick={handlePasteClick}
+                                    className="flex-1 py-2 bg-surface hover:bg-surfaceHighlight border border-border/60 hover:border-primary/50 text-textMuted hover:text-textMain rounded text-xs flex items-center justify-center gap-2 transition-colors"
+                                >
+                                    <Clipboard size={12} /> Paste Image
+                                </button>
+                             </div>
+                             <p className="text-[10px] text-textMuted mt-2 text-center">
+                                 Tip: You can also press <kbd className="font-mono bg-surfaceHighlight px-1 rounded border border-border">Ctrl+V</kbd> anywhere in this modal to paste.
+                             </p>
+                         </div>
+                    </div>
+
+                    {/* Tag Manager Replicated */}
+                    <div>
+                        <label className="text-xs font-bold text-textMain uppercase tracking-wider block mb-3">Tags</label>
+                          <div className="space-y-2">
+                             {/* Active Tags Display */}
+                             <div className="flex flex-wrap gap-2 mb-4 min-h-[32px] p-2 bg-surfaceHighlight/20 rounded-lg border border-border/40">
+                                  {formData.tags.map((tag: string) => (
+                                      <span key={tag} className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs bg-primary/10 text-primary border border-primary/20">
                                           {tag}
                                           <button onClick={() => toggleTag(tag)} className="hover:text-primary"><X size={10}/></button>
                                       </span>
                                   ))}
                                   {formData.tags.length === 0 && <span className="text-xs text-textMuted italic">No tags selected</span>}
-                             </div>
+                              </div>
 
-                             {/* Tag Groups */}
-                             <div className="border border-border/40 rounded-md divide-y divide-border/40 max-h-[200px] overflow-y-auto">
+                              {/* Groups Accordion */}
+                              <div className="border border-border/40 rounded-md divide-y divide-border/40 max-h-[150px] overflow-y-auto">
                                   {tagGroups.map((group) => {
                                       const isExpanded = expandedTagGroup === group.name;
                                       return (
@@ -570,91 +657,39 @@ const CloseTradeModal: React.FC<CloseTradeModalProps> = ({ currentData, tagGroup
                                           </div>
                                       )
                                   })}
-                             </div>
-                        </div>
-                    </div>
-
-                    {/* Notes */}
-                    <div>
-                         <label className="text-xs font-bold text-textMain uppercase tracking-wider mb-2 block">Notes</label>
-                         <div className="space-y-3">
-                             <textarea 
-                                  value={formData.notes}
-                                  onChange={(e) => setFormData({...formData, notes: e.target.value})}
-                                  className="w-full bg-surface border border-border rounded-lg p-3 text-sm text-textMain focus:outline-none focus:border-primary min-h-[80px] resize-none"
-                                  placeholder="Technical Notes / Closing Thoughts..."
-                             />
-                             <textarea 
-                                  value={formData.emotionalNotes}
-                                  onChange={(e) => setFormData({...formData, emotionalNotes: e.target.value})}
-                                  className="w-full bg-surface border border-border rounded-lg p-3 text-sm text-textMain focus:outline-none focus:border-primary min-h-[60px] resize-none"
-                                  placeholder="Emotional State at Close..."
-                             />
-                         </div>
-                    </div>
-
-                    {/* Screenshots */}
-                    <div>
-                         <label className="text-xs font-bold text-textMain uppercase tracking-wider mb-2 flex justify-between items-center">
-                             Screenshots
-                             <div className="flex items-center gap-2">
-                                <button type="button" onClick={handlePasteClick} className="text-[10px] text-textMuted hover:text-textMain flex items-center gap-1" title="Paste"><Clipboard size={10}/> Paste</button>
-                                <button type="button" onClick={() => fileInputRef.current?.click()} className="text-[10px] text-primary hover:underline flex items-center gap-1"><Upload size={10}/> Upload</button>
-                                <input type="file" ref={fileInputRef} className="hidden" accept="image/*" onChange={handleFileUpload} />
-                             </div>
-                         </label>
-                         
-                         <div className="grid grid-cols-4 gap-2 mb-2">
-                             {formData.screenshots.map((url: string, idx: number) => (
-                                 <div key={idx} className="aspect-square bg-surface border border-border rounded overflow-hidden relative group">
-                                     <img src={url} className="w-full h-full object-cover" />
-                                     <button onClick={() => handleRemoveImage(idx)} className="absolute top-0.5 right-0.5 bg-black/50 text-white p-0.5 rounded opacity-0 group-hover:opacity-100"><X size={10}/></button>
-                                 </div>
-                             ))}
-                             {formData.screenshots.length === 0 && (
-                                 <div className="col-span-4 p-4 border border-dashed border-border rounded-lg text-center text-xs text-textMuted italic">No screenshots</div>
-                             )}
-                         </div>
-                         
-                         <div className="flex gap-2">
-                             <input 
-                                type="text" 
-                                value={newImageUrl} 
-                                onChange={(e) => setNewImageUrl(e.target.value)}
-                                className="flex-1 bg-surface border border-border rounded px-2 py-1 text-xs text-textMain focus:outline-none focus:border-primary"
-                                placeholder="Image URL..."
-                             />
-                             <button type="button" onClick={handleAddImageFromUrl} className="px-2 py-1 bg-primary text-white rounded text-xs">Add</button>
-                         </div>
+                              </div>
+                          </div>
                     </div>
                 </div>
             </div>
         </div>
 
-        <div className="p-5 border-t border-border bg-surface flex justify-between items-center">
-            <label className="flex items-center gap-2 cursor-pointer">
+        <div className="p-4 border-t border-border bg-surface flex justify-between items-center rounded-b-xl">
+            <label className="flex items-center gap-2 cursor-pointer group">
                 <input 
                     type="checkbox" 
-                    checked={affectBalance} 
+                    checked={affectBalance}
                     onChange={(e) => setAffectBalance(e.target.checked)}
-                    className="rounded border-border text-primary focus:ring-primary"
+                    className="w-4 h-4 rounded border-border text-primary focus:ring-primary bg-surfaceHighlight"
                 />
-                <span className="text-sm text-textMain font-medium">Update Account Balance</span>
+                <span className="text-sm font-medium text-textMain group-hover:text-primary transition-colors">Affect Account Balance</span>
                 <div className="group relative">
-                    <Info size={14} className="text-textMuted cursor-help" />
-                    <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 w-48 bg-black/90 text-white text-[10px] p-2 rounded pointer-events-none opacity-0 group-hover:opacity-100 transition-opacity z-50">
-                        If checked, the P&L will be credited/debited to your account balance.
-                    </div>
+                    <Info size={14} className="text-textMuted hover:text-primary" />
+                    <span className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 w-48 p-2 bg-black/90 text-white text-[10px] rounded opacity-0 group-hover:opacity-100 pointer-events-none transition-opacity">
+                        If checked, the Net P&L will be added/deducted from your account balance immediately.
+                    </span>
                 </div>
             </label>
-
             <div className="flex gap-3">
-                <button onClick={onClose} className="px-5 py-2 text-sm font-medium text-textMuted hover:text-textMain hover:bg-surfaceHighlight rounded-lg transition-colors">
+                <button 
+                    onClick={onClose}
+                    className="px-4 py-2 text-sm font-medium text-textMuted hover:text-textMain hover:bg-surfaceHighlight rounded-lg transition-colors"
+                >
                     Cancel
                 </button>
                 <button 
                     onClick={handleConfirm}
-                    className="px-6 py-2 bg-primary hover:bg-blue-600 text-white rounded-lg text-sm font-bold shadow-lg shadow-primary/20 transition-all flex items-center gap-2"
+                    className="px-6 py-2 bg-primary hover:bg-blue-600 text-white rounded-lg text-sm font-bold transition-colors shadow-lg shadow-primary/20 flex items-center gap-2"
                 >
                     <Check size={16} /> Confirm Close
                 </button>

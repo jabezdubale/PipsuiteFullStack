@@ -33,65 +33,45 @@ export const calculateAutoTags = (params: AutoTagParams): string[] => {
         return Array.from(currentTags);
     }
 
-    // 2. #Break-Even (Exit is very close to Entry)
-    // Tolerance: 0.01% of entry price (handles slight slippage or spread costs at BE)
-    const tolerance = entryPrice * 0.0001;
-    const isBE = Math.abs(exitPrice - entryPrice) <= tolerance;
-    setTag('#Break-Even', isBE);
+    // Comparison tolerance for floats
+    const isEq = (a: number, b: number) => Math.abs(a - b) < 0.00001;
 
-    // 3. #TP & #SL & Early/Late Logic
-    let hitTP = false;
-    let hitSL = false;
+    // 2. #TP (Touched Take Profit)
+    const hitTP = takeProfit !== undefined && isEq(exitPrice, takeProfit);
+    setTag('#TP', hitTP);
+
+    // 3. #SL (Touched Stop Loss)
+    const hitSL = stopLoss !== undefined && isEq(exitPrice, stopLoss);
+    setTag('#SL', hitSL);
+
+    // 4. #Break-Even (Exit == Entry)
+    const hitBE = isEq(exitPrice, entryPrice);
+    setTag('#Break-Even', hitBE);
+
+    // 5. #Early-Exit (Between Entry and TP)
     let isEarly = false;
-    let isLate = false;
-
-    if (type === TradeType.LONG) {
-        if (takeProfit !== undefined) {
-            // Hit TP if exit is at or above TP (Inequality for slippage)
-            hitTP = exitPrice >= takeProfit;
-            
-            // Early Exit: Profitable (above entry) but below TP, and not BE
-            if (exitPrice > entryPrice && exitPrice < takeProfit && !isBE) {
-                isEarly = true;
-            }
-            
-            // Late Chased / Runner (Better than TP): Exit > TP
-            if (exitPrice > takeProfit) {
-                isLate = true;
-            }
-        }
-        if (stopLoss !== undefined) {
-            // Hit SL if exit is at or below SL
-            hitSL = exitPrice <= stopLoss;
-        }
-    } else { // SHORT
-        if (takeProfit !== undefined) {
-            // Hit TP if exit is at or below TP
-            hitTP = exitPrice <= takeProfit;
-            
-            // Early Exit: Profitable (below entry) but above TP
-            if (exitPrice < entryPrice && exitPrice > takeProfit && !isBE) {
-                isEarly = true;
-            }
-
-            // Late Chased / Runner (Better than TP): Exit < TP
-            if (exitPrice < takeProfit) {
-                isLate = true;
-            }
-        }
-        if (stopLoss !== undefined) {
-            // Hit SL if exit is at or above SL
-            hitSL = exitPrice >= stopLoss;
+    if (takeProfit !== undefined) {
+        if (type === TradeType.LONG) {
+            // Entry < Exit < TP
+            isEarly = exitPrice > entryPrice && exitPrice < takeProfit;
+        } else {
+            // Entry > Exit > TP
+            isEarly = exitPrice < entryPrice && exitPrice > takeProfit;
         }
     }
-
-    // Apply tags based on logic
-    // Note: If isBE is true, usually we don't want TP/SL tags unless TP/SL were effectively at entry.
-    // Logic below prioritizes the specific outcome flags.
-    
-    setTag('#TP', hitTP);
-    setTag('#SL', hitSL);
     setTag('#Early-Exit', isEarly);
+
+    // 6. #Late-Chased (Better than TP)
+    // Long: Exit > TP
+    // Short: Exit < TP
+    let isLate = false;
+    if (takeProfit !== undefined) {
+        if (type === TradeType.LONG) {
+            isLate = exitPrice > takeProfit;
+        } else {
+            isLate = exitPrice < takeProfit;
+        }
+    }
     setTag('#Late-Chased', isLate);
 
     return Array.from(currentTags);

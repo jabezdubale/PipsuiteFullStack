@@ -102,8 +102,7 @@ export interface Trade {
   outcome?: TradeOutcome; 
 
   // Financials
-  fees: number; // New manual field
-  deltaFromPland: number; // Renamed from old fees (calculated)
+  fees: number;
   mainPnl?: number; 
   partials?: TradePartial[]; 
   pnl: number; 
@@ -161,7 +160,6 @@ export const AVAILABLE_COLUMNS: { key: ColumnKey; label: string }[] = [
   { key: 'partialProfit', label: 'Partial Profits' },
   { key: 'mainPnl', label: 'Core P&L' },
   { key: 'fees', label: 'Fees' },
-  { key: 'deltaFromPland', label: 'Plan Delta' },
   { key: 'pnl', label: 'Net P&L' },
   { key: 'notes', label: 'Technical Notes' },
   { key: 'emotionalNotes', label: 'Emotional Notes' },

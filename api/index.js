@@ -47,7 +47,6 @@ const parseTradeRow = (row) => {
     t.pnl = parseFloat(t.pnl);
     t.quantity = parseFloat(t.quantity);
     t.fees = parseFloat(t.fees || '0');
-    t.deltaFromPland = parseFloat(t.deltaFromPland || '0');
     t.mainPnl = t.mainPnl ? parseFloat(t.mainPnl) : undefined;
     t.stopLoss = t.stopLoss ? parseFloat(t.stopLoss) : undefined;
     t.takeProfit = t.takeProfit ? parseFloat(t.takeProfit) : undefined;
@@ -76,8 +75,7 @@ const mapTradeToParams = (t) => [
     t.id, t.accountId, t.symbol, t.type, t.status, t.outcome,
     sanitizeNumber(t.entryPrice), sanitizeNumber(t.exitPrice), 
     sanitizeNumber(t.stopLoss), sanitizeNumber(t.takeProfit), sanitizeNumber(t.quantity),
-    sanitizeNumber(t.fees) || 0, sanitizeNumber(t.deltaFromPland) || 0,
-    sanitizeNumber(t.mainPnl), sanitizeNumber(t.pnl) || 0, sanitizeNumber(t.balance),
+    sanitizeNumber(t.fees) || 0, sanitizeNumber(t.mainPnl), sanitizeNumber(t.pnl) || 0, sanitizeNumber(t.balance),
     t.createdAt, t.entryDate, t.exitDate, t.entryTime, t.exitTime,
     t.entrySession, t.exitSession, t.orderType, t.setup,
     sanitizeNumber(t.leverage), sanitizeNumber(t.riskPercentage), t.notes, t.emotionalNotes,
@@ -114,12 +112,12 @@ const ensureSchema = async (db) => {
             );
         `);
 
-        // 2. Ensure Start User Exists (Keys removed for security)
+        // 2. Ensure Start User Exists
         const userCheck = await db.query("SELECT * FROM users WHERE id = 'start_user'");
         if (userCheck.rows.length === 0) {
             await db.query(`
-                INSERT INTO users (id, name) 
-                VALUES ('start_user', 'Start User')
+                INSERT INTO users (id, name, gemini_api_key, twelve_data_api_key) 
+                VALUES ('start_user', 'Start User', 'AIzaSyAM08mKrJmUn3lrBUtrNQFlw2i2g4z2BNY', '8367337fa06f44b38314f68e31c446b9')
             `);
         }
 
@@ -137,10 +135,12 @@ const ensureSchema = async (db) => {
 
         // 4. Safer Migration for user_id column
         try {
-            await db.query(`ALTER TABLE accounts ADD COLUMN IF NOT EXISTS user_id VARCHAR(255)`);
-        } catch (e) {}
+            await db.query(`ALTER TABLE accounts ADD COLUMN user_id VARCHAR(255)`);
+        } catch (e) {
+            // Ignore "column already exists" error
+        }
 
-        // 5. Link orphan accounts
+        // 5. Link orphan accounts to Start User
         await db.query("UPDATE accounts SET user_id = 'start_user' WHERE user_id IS NULL");
 
         // 6. Create Other Tables
@@ -163,8 +163,7 @@ const ensureSchema = async (db) => {
             "symbol VARCHAR(20)", "type VARCHAR(20)", "status VARCHAR(20)", "outcome VARCHAR(20)",
             "entry_price DECIMAL(20, 5)", "exit_price DECIMAL(20, 5)", 
             "stop_loss DECIMAL(20, 5)", "take_profit DECIMAL(20, 5)", 
-            "quantity DECIMAL(20, 5)", "fees DECIMAL(20, 2)", "delta_from_pland DECIMAL(20, 2)",
-            "main_pnl DECIMAL(20, 2)", 
+            "quantity DECIMAL(20, 5)", "fees DECIMAL(20, 2)", "main_pnl DECIMAL(20, 2)", 
             "pnl DECIMAL(20, 2)", "balance DECIMAL(20, 2)",
             "created_at TIMESTAMP", "entry_date TIMESTAMP", "exit_date TIMESTAMP",
             "entry_time VARCHAR(20)", "exit_time VARCHAR(20)",
@@ -179,18 +178,10 @@ const ensureSchema = async (db) => {
         for (const colDef of columns) {
             try {
                 await db.query(`ALTER TABLE trades ADD COLUMN IF NOT EXISTS ${colDef}`);
-            } catch (e) {}
+            } catch (e) {
+                // Ignore errors
+            }
         }
-        
-        // 8. Performance Indexes (Phase 3 Optimization)
-        try {
-            await db.query(`CREATE INDEX IF NOT EXISTS idx_trades_account_id ON trades(account_id)`);
-            await db.query(`CREATE INDEX IF NOT EXISTS idx_trades_entry_date ON trades(entry_date DESC)`);
-            await db.query(`CREATE INDEX IF NOT EXISTS idx_accounts_user_id ON accounts(user_id)`);
-        } catch(e) {
-            console.warn("Index creation warning:", e.message);
-        }
-
         isSchemaChecked = true;
     } catch (err) {
         console.error("Schema init failed:", err);
@@ -323,7 +314,7 @@ app.post('/api/accounts', async (req, res) => {
     }
 });
 
-// Atomic Balance Adjustment (Manual)
+// Atomic Balance Adjustment
 app.post('/api/accounts/:id/adjust-balance', async (req, res) => {
     const { id } = req.params;
     const { amount } = req.body;
@@ -337,6 +328,7 @@ app.post('/api/accounts/:id/adjust-balance', async (req, res) => {
             'UPDATE accounts SET balance = balance + $1 WHERE id = $2',
             [amount, id]
         );
+        // Return updated list for the user of this account
         const accResult = await req.db.query('SELECT user_id FROM accounts WHERE id = $1', [id]);
         if (accResult.rows.length === 0) return res.status(404).json({ error: "Account not found" });
         
@@ -369,19 +361,8 @@ app.delete('/api/accounts/:id', async (req, res) => {
 
 // TRADES
 app.get('/api/trades', async (req, res) => {
-    const userId = req.query.userId;
     try {
-        let query = 'SELECT t.* FROM trades t';
-        const params = [];
-        
-        if (userId) {
-            query += ' JOIN accounts a ON t.account_id = a.id WHERE a.user_id = $1';
-            params.push(userId);
-        }
-        
-        query += ' ORDER BY t.entry_date DESC';
-        
-        const result = await req.db.query(query, params);
+        const result = await req.db.query('SELECT * FROM trades ORDER BY entry_date DESC');
         res.json(result.rows.map(parseTradeRow));
     } catch (err) {
         if (err.code === '42P01') { await ensureSchema(req.db); return res.json([]); }
@@ -396,7 +377,7 @@ app.post('/api/trades', async (req, res) => {
             INSERT INTO trades (
                 id, account_id, symbol, type, status, outcome,
                 entry_price, exit_price, stop_loss, take_profit, quantity,
-                fees, delta_from_pland, main_pnl, pnl, balance,
+                fees, main_pnl, pnl, balance,
                 created_at, entry_date, exit_date, entry_time, exit_time,
                 entry_session, exit_session, order_type, setup,
                 leverage, risk_percentage, notes, emotional_notes,
@@ -405,13 +386,12 @@ app.post('/api/trades', async (req, res) => {
             ) VALUES (
                 $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15,
                 $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27, $28,
-                $29, $30, $31, $32, $33, $34, $35
+                $29, $30, $31, $32, $33, $34
             ) ON CONFLICT (id) DO UPDATE SET
                 symbol = EXCLUDED.symbol, type = EXCLUDED.type, status = EXCLUDED.status, outcome = EXCLUDED.outcome,
                 entry_price = EXCLUDED.entry_price, exit_price = EXCLUDED.exit_price, 
                 stop_loss = EXCLUDED.stop_loss, take_profit = EXCLUDED.take_profit, quantity = EXCLUDED.quantity,
-                fees = EXCLUDED.fees, delta_from_pland = EXCLUDED.delta_from_pland, main_pnl = EXCLUDED.main_pnl, 
-                pnl = EXCLUDED.pnl, balance = EXCLUDED.balance,
+                fees = EXCLUDED.fees, main_pnl = EXCLUDED.main_pnl, pnl = EXCLUDED.pnl, balance = EXCLUDED.balance,
                 entry_date = EXCLUDED.entry_date, exit_date = EXCLUDED.exit_date,
                 entry_time = EXCLUDED.entry_time, exit_time = EXCLUDED.exit_time,
                 entry_session = EXCLUDED.entry_session, exit_session = EXCLUDED.exit_session,
@@ -420,30 +400,8 @@ app.post('/api/trades', async (req, res) => {
                 tags = EXCLUDED.tags, screenshots = EXCLUDED.screenshots, partials = EXCLUDED.partials,
                 is_deleted = EXCLUDED.is_deleted, deleted_at = EXCLUDED.deleted_at, is_balance_updated = EXCLUDED.is_balance_updated
         `;
-        
-        // map params including the new fields
-        const params = [
-            t.id, t.accountId, t.symbol, t.type, t.status, t.outcome,
-            sanitizeNumber(t.entryPrice), sanitizeNumber(t.exitPrice), 
-            sanitizeNumber(t.stopLoss), sanitizeNumber(t.takeProfit), sanitizeNumber(t.quantity),
-            sanitizeNumber(t.fees) || 0, sanitizeNumber(t.deltaFromPland) || 0,
-            sanitizeNumber(t.mainPnl), sanitizeNumber(t.pnl) || 0, sanitizeNumber(t.balance),
-            t.createdAt, t.entryDate, t.exitDate, t.entryTime, t.exitTime,
-            t.entrySession, t.exitSession, t.orderType, t.setup,
-            sanitizeNumber(t.leverage), sanitizeNumber(t.riskPercentage), t.notes, t.emotionalNotes,
-            safeJson(t.tags), safeJson(t.screenshots), safeJson(t.partials),
-            t.isDeleted || false, t.deletedAt, t.isBalanceUpdated || false
-        ];
-
-        await req.db.query(queryText, params);
-        
-        // Refetch logic needs to be safe for current user context, but this endpoint just saves
-        // Returning the saved object is usually better, but for consistency with existing app we fetch all
-        // However, fetching ALL trades here is inefficient and less secure if we don't have user context.
-        // We will return just the one trade or an empty array to force frontend refetch if needed.
-        // For simplicity with existing frontend logic, we return empty and let frontend fetch (or return request body)
-        // Ideally we fetch just this one row:
-        const result = await req.db.query('SELECT * FROM trades WHERE id = $1', [t.id]);
+        await req.db.query(queryText, mapTradeToParams(t));
+        const result = await req.db.query('SELECT * FROM trades ORDER BY entry_date DESC');
         res.json(result.rows.map(parseTradeRow));
     } catch (err) {
         if (err.code === '42703' || err.code === '42P01') { 
@@ -451,72 +409,6 @@ app.post('/api/trades', async (req, res) => {
             return res.status(500).json({ error: "Schema updated. Please retry." });
         }
         res.status(500).json({ error: err.message });
-    }
-});
-
-// ATOMIC CLOSE TRADE ENDPOINT
-app.post('/api/trades/:id/close', async (req, res) => {
-    const { id } = req.params;
-    const { trade, affectBalance } = req.body;
-    
-    if (!trade) return res.status(400).json({ error: "Trade data required" });
-
-    const client = await req.db.connect();
-    
-    try {
-        await client.query('BEGIN');
-
-        // 1. Update Trade
-        const queryText = `
-            UPDATE trades SET
-                symbol = $1, type = $2, status = $3, outcome = $4,
-                entry_price = $5, exit_price = $6, stop_loss = $7, take_profit = $8, quantity = $9,
-                fees = $10, delta_from_pland = $11, main_pnl = $12, pnl = $13, balance = $14,
-                entry_date = $15, exit_date = $16, entry_time = $17, exit_time = $18,
-                entry_session = $19, exit_session = $20, order_type = $21, setup = $22,
-                notes = $23, emotional_notes = $24, tags = $25, screenshots = $26, partials = $27,
-                is_balance_updated = $28
-            WHERE id = $29
-        `;
-        
-        const params = [
-            trade.symbol, trade.type, trade.status, trade.outcome,
-            sanitizeNumber(trade.entryPrice), sanitizeNumber(trade.exitPrice),
-            sanitizeNumber(trade.stopLoss), sanitizeNumber(trade.takeProfit), sanitizeNumber(trade.quantity),
-            sanitizeNumber(trade.fees) || 0, sanitizeNumber(trade.deltaFromPland) || 0,
-            sanitizeNumber(trade.mainPnl), sanitizeNumber(trade.pnl) || 0, sanitizeNumber(trade.balance),
-            trade.entryDate, trade.exitDate, trade.entryTime, trade.exitTime,
-            trade.entrySession, trade.exitSession, trade.orderType, trade.setup,
-            trade.notes, trade.emotionalNotes,
-            safeJson(trade.tags), safeJson(trade.screenshots), safeJson(trade.partials),
-            trade.isBalanceUpdated || false,
-            id
-        ];
-
-        await client.query(queryText, params);
-
-        // 2. Update Balance if requested
-        if (affectBalance) {
-            const amount = sanitizeNumber(trade.pnl) || 0;
-            if (amount !== 0) {
-                await client.query(
-                    'UPDATE accounts SET balance = balance + $1 WHERE id = $2',
-                    [amount, trade.accountId]
-                );
-            }
-        }
-
-        await client.query('COMMIT');
-        
-        const result = await client.query('SELECT * FROM trades WHERE id = $1', [id]);
-        res.json(result.rows.map(parseTradeRow));
-
-    } catch (err) {
-        await client.query('ROLLBACK');
-        console.error("Atomic Close Failed", err);
-        res.status(500).json({ error: err.message });
-    } finally {
-        if (client) client.release();
     }
 });
 
@@ -533,7 +425,7 @@ app.post('/api/trades/batch', async (req, res) => {
             INSERT INTO trades (
                 id, account_id, symbol, type, status, outcome,
                 entry_price, exit_price, stop_loss, take_profit, quantity,
-                fees, delta_from_pland, main_pnl, pnl, balance,
+                fees, main_pnl, pnl, balance,
                 created_at, entry_date, exit_date, entry_time, exit_time,
                 entry_session, exit_session, order_type, setup,
                 leverage, risk_percentage, notes, emotional_notes,
@@ -542,13 +434,12 @@ app.post('/api/trades/batch', async (req, res) => {
             ) VALUES (
                 $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15,
                 $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27, $28,
-                $29, $30, $31, $32, $33, $34, $35
+                $29, $30, $31, $32, $33, $34
             ) ON CONFLICT (id) DO UPDATE SET
                 symbol = EXCLUDED.symbol, type = EXCLUDED.type, status = EXCLUDED.status, outcome = EXCLUDED.outcome,
                 entry_price = EXCLUDED.entry_price, exit_price = EXCLUDED.exit_price, 
                 stop_loss = EXCLUDED.stop_loss, take_profit = EXCLUDED.take_profit, quantity = EXCLUDED.quantity,
-                fees = EXCLUDED.fees, delta_from_pland = EXCLUDED.delta_from_pland, main_pnl = EXCLUDED.main_pnl, 
-                pnl = EXCLUDED.pnl, balance = EXCLUDED.balance,
+                fees = EXCLUDED.fees, main_pnl = EXCLUDED.main_pnl, pnl = EXCLUDED.pnl, balance = EXCLUDED.balance,
                 entry_date = EXCLUDED.entry_date, exit_date = EXCLUDED.exit_date,
                 entry_time = EXCLUDED.entry_time, exit_time = EXCLUDED.exit_time,
                 entry_session = EXCLUDED.entry_session, exit_session = EXCLUDED.exit_session,
@@ -559,25 +450,12 @@ app.post('/api/trades/batch', async (req, res) => {
         `;
 
         for (const t of trades) {
-            // Need updated mapping for batch too
-            const params = [
-                t.id, t.accountId, t.symbol, t.type, t.status, t.outcome,
-                sanitizeNumber(t.entryPrice), sanitizeNumber(t.exitPrice), 
-                sanitizeNumber(t.stopLoss), sanitizeNumber(t.takeProfit), sanitizeNumber(t.quantity),
-                sanitizeNumber(t.fees) || 0, sanitizeNumber(t.deltaFromPland) || 0,
-                sanitizeNumber(t.mainPnl), sanitizeNumber(t.pnl) || 0, sanitizeNumber(t.balance),
-                t.createdAt, t.entryDate, t.exitDate, t.entryTime, t.exitTime,
-                t.entrySession, t.exitSession, t.orderType, t.setup,
-                sanitizeNumber(t.leverage), sanitizeNumber(t.riskPercentage), t.notes, t.emotionalNotes,
-                safeJson(t.tags), safeJson(t.screenshots), safeJson(t.partials),
-                t.isDeleted || false, t.deletedAt, t.isBalanceUpdated || false
-            ];
-            await client.query(queryText, params);
+            await client.query(queryText, mapTradeToParams(t));
         }
 
         await client.query('COMMIT');
-        // Return placeholder, frontend should refetch
-        res.json([]);
+        const result = await client.query('SELECT * FROM trades ORDER BY entry_date DESC');
+        res.json(result.rows.map(parseTradeRow));
     } catch (err) {
         await client.query('ROLLBACK');
         res.status(500).json({ error: err.message });
@@ -590,7 +468,8 @@ app.delete('/api/trades/batch', async (req, res) => {
     const { ids } = req.body;
     try {
         await req.db.query('DELETE FROM trades WHERE id = ANY($1)', [ids]);
-        res.json([]);
+        const result = await req.db.query('SELECT * FROM trades ORDER BY entry_date DESC');
+        res.json(result.rows.map(parseTradeRow));
     } catch (err) {
         res.status(500).json({ error: err.message });
     }
@@ -600,14 +479,13 @@ app.delete('/api/trades/:id', async (req, res) => {
     const { id } = req.params;
     try {
         await req.db.query('DELETE FROM trades WHERE id = $1', [id]);
-        res.json([]);
+        const result = await req.db.query('SELECT * FROM trades ORDER BY entry_date DESC');
+        res.json(result.rows.map(parseTradeRow));
     } catch (err) {
         res.status(500).json({ error: err.message });
     }
 });
 
-// ... Tags, Strategies, Notes routes remain same (omitted for brevity but assumed present) ...
-// TAGS
 app.get('/api/tags', async (req, res) => {
     const userId = req.query.userId;
     try {
@@ -634,7 +512,6 @@ app.post('/api/tags', async (req, res) => {
     }
 });
 
-// STRATEGIES
 app.get('/api/strategies', async (req, res) => {
     const userId = req.query.userId;
     try {
@@ -661,7 +538,6 @@ app.post('/api/strategies', async (req, res) => {
     }
 });
 
-// MONTHLY NOTES
 app.get('/api/monthly-notes/:key', async (req, res) => {
     const { key } = req.params;
     try {

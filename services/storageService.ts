@@ -3,48 +3,18 @@ import { Trade, Account, TagGroup, MonthlyNoteData, User } from '../types';
 
 const API_BASE = '/api';
 
-// In-Memory Cache for static data
-const CACHE: {
-    tagGroups: Record<string, TagGroup[]> | null;
-    strategies: Record<string, string[]> | null;
-} = {
-    tagGroups: null,
-    strategies: null
-};
-
-// --- Helper for fetch with Retry ---
-const fetchWithRetry = async (url: string, options?: RequestInit, retries = 3, backoff = 500): Promise<Response> => {
-    try {
-        const response = await fetch(url, options);
-        if (!response.ok) {
-            // Throw to trigger catch block for 5xx errors or if we want to retry on 429 etc.
-            // For 4xx client errors (except maybe 429), we usually don't want to retry.
-            if (response.status >= 500 || response.status === 429) {
-                throw new Error(response.statusText);
-            }
-        }
-        return response;
-    } catch (err) {
-        if (retries > 0) {
-            await new Promise(resolve => setTimeout(resolve, backoff));
-            return fetchWithRetry(url, options, retries - 1, backoff * 2);
-        }
-        throw err;
-    }
-};
-
+// --- Helper for fetch ---
 const api = async <T>(endpoint: string, options?: RequestInit): Promise<T> => {
-    const response = await fetchWithRetry(`${API_BASE}${endpoint}`, {
+    const response = await fetch(`${API_BASE}${endpoint}`, {
         headers: {
             'Content-Type': 'application/json',
         },
         ...options,
     });
-    
     if (!response.ok) {
         throw new Error(`API Error: ${response.statusText}`);
     }
-    
+    // Handle specific case where generic settings endpoint returns null
     const text = await response.text();
     try {
         return text ? JSON.parse(text) : null;
@@ -96,7 +66,7 @@ const DEFAULT_STRATEGIES: string[] = [
     'Gap-Fill'
 ];
 
-// --- Generic Settings ---
+// --- Generic Settings (Theme, Columns, User Profile) ---
 
 export const getSetting = async <T>(key: string, defaultVal: T): Promise<T> => {
     try {
@@ -138,6 +108,7 @@ export const getAccounts = async (userId?: string): Promise<Account[]> => {
     try {
         const query = userId ? `?userId=${userId}` : '';
         const accounts = await api<Account[]>(`/accounts${query}`);
+        // If we requested for a specific user and got nothing, we might need to initialize (handled in UI)
         return accounts || [];
     } catch (e) {
         console.error("Failed to fetch accounts", e);
@@ -165,9 +136,8 @@ export const deleteAccount = async (accountId: string): Promise<void> => {
 
 // --- Trade Management ---
 
-export const getTrades = async (userId?: string): Promise<Trade[]> => {
-    const query = userId ? `?userId=${userId}` : '';
-    return api<Trade[]>(`/trades${query}`);
+export const getTrades = async (): Promise<Trade[]> => {
+    return api<Trade[]>('/trades');
 };
 
 export const saveTrade = async (trade: Trade): Promise<Trade[]> => {
@@ -177,15 +147,8 @@ export const saveTrade = async (trade: Trade): Promise<Trade[]> => {
     });
 };
 
-// Atomic Close Transaction
-export const closeTrade = async (trade: Trade, affectBalance: boolean): Promise<Trade[]> => {
-    return await api<Trade[]>(`/trades/${trade.id}/close`, {
-        method: 'POST',
-        body: JSON.stringify({ trade, affectBalance })
-    });
-};
-
 export const saveTrades = async (newTrades: Trade[]): Promise<Trade[]> => {
+    // Uses the batch import endpoint for efficiency and reliability
     return api<Trade[]>('/trades/batch', {
         method: 'POST',
         body: JSON.stringify({ trades: newTrades })
@@ -206,35 +169,21 @@ export const deleteTrades = async (ids: string[]): Promise<Trade[]> => {
 // --- Tag Management ---
 
 export const getTagGroups = async (userId?: string): Promise<TagGroup[]> => {
-    const cacheKey = userId || 'global';
-    
-    // Check Cache
-    if (CACHE.tagGroups && CACHE.tagGroups[cacheKey]) {
-        return CACHE.tagGroups[cacheKey];
-    }
-
     try {
         const query = userId ? `?userId=${userId}` : '';
         const groups = await api<TagGroup[]>(`/tags${query}`);
-        const finalGroups = (!groups || groups.length === 0) ? DEFAULT_TAG_GROUPS : groups;
         
-        // Update Cache
-        if (!CACHE.tagGroups) CACHE.tagGroups = {};
-        CACHE.tagGroups[cacheKey] = finalGroups;
-        
-        return finalGroups;
+        // If user specific tags are empty, return defaults
+        if (!groups || groups.length === 0) {
+            return DEFAULT_TAG_GROUPS;
+        }
+        return groups;
     } catch (e) {
         return DEFAULT_TAG_GROUPS;
     }
 };
 
 export const saveTagGroups = async (groups: TagGroup[], userId?: string): Promise<TagGroup[]> => {
-    const cacheKey = userId || 'global';
-    
-    // Optimistic Cache Update
-    if (!CACHE.tagGroups) CACHE.tagGroups = {};
-    CACHE.tagGroups[cacheKey] = groups;
-
     return api<TagGroup[]>('/tags', {
         method: 'POST',
         body: JSON.stringify({ groups, userId })
@@ -244,35 +193,19 @@ export const saveTagGroups = async (groups: TagGroup[], userId?: string): Promis
 // --- Strategy Management ---
 
 export const getStrategies = async (userId?: string): Promise<string[]> => {
-    const cacheKey = userId || 'global';
-
-    // Check Cache
-    if (CACHE.strategies && CACHE.strategies[cacheKey]) {
-        return CACHE.strategies[cacheKey];
-    }
-
     try {
         const query = userId ? `?userId=${userId}` : '';
         const strategies = await api<string[]>(`/strategies${query}`);
-        const finalStrategies = (!strategies || strategies.length === 0) ? DEFAULT_STRATEGIES : strategies;
-        
-        // Update Cache
-        if (!CACHE.strategies) CACHE.strategies = {};
-        CACHE.strategies[cacheKey] = finalStrategies;
-
-        return finalStrategies;
+        if (!strategies || strategies.length === 0) {
+            return DEFAULT_STRATEGIES;
+        }
+        return strategies;
     } catch (e) {
         return DEFAULT_STRATEGIES;
     }
 };
 
 export const saveStrategies = async (strategies: string[], userId?: string): Promise<string[]> => {
-    const cacheKey = userId || 'global';
-
-    // Optimistic Cache Update
-    if (!CACHE.strategies) CACHE.strategies = {};
-    CACHE.strategies[cacheKey] = strategies;
-
     return api<string[]>('/strategies', {
         method: 'POST',
         body: JSON.stringify({ strategies, userId })

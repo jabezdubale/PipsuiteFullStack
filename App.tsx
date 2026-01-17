@@ -12,7 +12,7 @@ import DeleteConfirmationModal from './components/DeleteConfirmationModal';
 import DeleteAccountModal from './components/DeleteAccountModal';
 import TagManager from './components/TagManager';
 import StrategyManager from './components/StrategyManager';
-import { getTrades, saveTrade, deleteTrades, trashTrades, restoreTrades, getAccounts, saveAccount, deleteAccount, getTagGroups, saveTagGroups, getStrategies, saveStrategies, saveTrades, getSetting, saveSetting, getUsers, saveUser, deleteUser, adjustAccountBalance } from './services/storageService';
+import { getTrades, saveTrade, deleteTrades, trashTrades, restoreTrades, getAccounts, saveAccount, deleteAccount, getTagGroups, saveTagGroups, getStrategies, saveStrategies, saveTrades, getSetting, saveSetting, getUsers, saveUser, deleteUser, adjustAccountBalance, uploadImage } from './services/storageService';
 import { fetchCurrentPrice, PriceResult } from './services/priceService';
 import { extractTradeParamsFromImage } from './services/geminiService';
 import { Trade, TradeStats, Account, TradeType, TradeStatus, ASSETS, TagGroup, OrderType, Session, TradeOutcome, User } from './types';
@@ -64,8 +64,9 @@ function App() {
   const [priceSource, setPriceSource] = useState<PriceResult | null>(null);
   const [priceError, setPriceError] = useState<string | null>(null);
 
-  // AI Analysis State
+  // AI Analysis & Upload State
   const [isAnalyzing, setIsAnalyzing] = useState(false);
+  const [isUploading, setIsUploading] = useState(false);
   
   const [newTradeForm, setNewTradeForm] = useState<any>({ symbol: 'XAUUSD', screenshots: [], tags: [], setup: '' });
   const [newImageUrl, setNewImageUrl] = useState('');
@@ -226,7 +227,7 @@ function App() {
 
   // Paste Listener for Add Modal
   useEffect(() => {
-    const handlePaste = (e: ClipboardEvent) => {
+    const handlePaste = async (e: ClipboardEvent) => {
       if (!isAddModalOpen) return; // Only listen when modal is open
 
       const items = e.clipboardData?.items;
@@ -236,17 +237,27 @@ function App() {
         if (items[i].type.indexOf("image") !== -1) {
           const blob = items[i].getAsFile();
           if (blob) {
-            // Compress before setting
-            compressImage(blob).then(base64 => {
-                 setNewTradeForm((prev: any) => {
+            try {
+                setIsUploading(true);
+                // Compress before upload
+                const base64 = await compressImage(blob);
+                // Upload to Vercel Blob
+                const url = await uploadImage('pasted_image.jpg', base64);
+                
+                setNewTradeForm((prev: any) => {
                     try {
-                        return { ...prev, screenshots: addScreenshot(prev.screenshots || [], base64) };
+                        return { ...prev, screenshots: addScreenshot(prev.screenshots || [], url) };
                     } catch (e: any) {
                         alert(e?.message || 'Unable to add screenshot.');
                         return prev;
                     }
-                 });
-            });
+                });
+            } catch(e) {
+                console.error(e);
+                alert("Failed to upload image.");
+            } finally {
+                setIsUploading(false);
+            }
           }
         }
       }
@@ -634,22 +645,27 @@ function App() {
       }
   };
 
-  const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file) {
-      compressImage(file).then(base64String => {
-        setNewTradeForm((prev: any) => {
-            try {
-                return { ...prev, screenshots: addScreenshot(prev.screenshots || [], base64String) };
-            } catch (e: any) {
-                alert(e?.message || 'Unable to add screenshot.');
-                return prev;
-            }
-        });
-      }).catch(err => {
+      try {
+          setIsUploading(true);
+          const base64String = await compressImage(file);
+          const url = await uploadImage(file.name, base64String);
+          setNewTradeForm((prev: any) => {
+              try {
+                  return { ...prev, screenshots: addScreenshot(prev.screenshots || [], url) };
+              } catch (e: any) {
+                  alert(e?.message || 'Unable to add screenshot.');
+                  return prev;
+              }
+          });
+      } catch (err) {
           console.error(err);
           alert("Error processing image.");
-      });
+      } finally {
+          setIsUploading(false);
+      }
     }
   };
 
@@ -1210,20 +1226,20 @@ function App() {
                 <button 
                     type="button" 
                     onClick={() => analysisFileInputRef.current?.click()}
-                    disabled={isAnalyzing}
+                    disabled={isAnalyzing || isUploading}
                     className="flex items-center gap-1.5 px-2 py-1 bg-surfaceHighlight hover:bg-border text-xs font-medium text-textMain rounded border border-border transition-colors disabled:opacity-50"
                 >
                     {isAnalyzing ? <Loader2 size={12} className="animate-spin" /> : <Upload size={12} />}
-                    Upload
+                    Analyze
                 </button>
                 <button 
                     type="button"
                     onClick={handleClipboardAnalysis}
-                    disabled={isAnalyzing}
+                    disabled={isAnalyzing || isUploading}
                     className="flex items-center gap-1.5 px-2 py-1 bg-surfaceHighlight hover:bg-border text-xs font-medium text-textMain rounded border border-border transition-colors disabled:opacity-50"
                 >
                     {isAnalyzing ? <Loader2 size={12} className="animate-spin" /> : <Clipboard size={12} />}
-                    Clipboard
+                    Paste & Analyze
                 </button>
               </div>
 
@@ -1441,9 +1457,11 @@ function App() {
                               <button 
                                   type="button"
                                   onClick={() => fileInputRef.current?.click()}
-                                  className="w-full py-1 bg-surfaceHighlight/50 hover:bg-surfaceHighlight text-textMuted hover:text-textMain border border-border border-dashed rounded text-[10px] flex items-center justify-center gap-1.5 transition-colors h-7"
+                                  disabled={isUploading}
+                                  className="w-full py-1 bg-surfaceHighlight/50 hover:bg-surfaceHighlight text-textMuted hover:text-textMain border border-border border-dashed rounded text-[10px] flex items-center justify-center gap-1.5 transition-colors h-7 disabled:opacity-50"
                               >
-                                  <Upload size={10} /> Upload
+                                  {isUploading ? <Loader2 size={10} className="animate-spin" /> : <Upload size={10} />}
+                                  {isUploading ? 'Uploading...' : 'Upload'}
                               </button>
                             </div>
 
@@ -1577,13 +1595,14 @@ function App() {
                   <button 
                       type="submit" 
                       form="add-trade-form"
-                      disabled={accounts.length === 0}
-                      className={`flex-1 py-2 rounded-lg font-bold text-sm shadow-md transition-all ${
-                          accounts.length === 0 
+                      disabled={accounts.length === 0 || isUploading}
+                      className={`flex-1 py-2 rounded-lg font-bold text-sm shadow-md transition-all flex items-center justify-center gap-2 ${
+                          accounts.length === 0 || isUploading
                           ? 'bg-surfaceHighlight text-textMuted cursor-not-allowed opacity-50 blur-[1px]' 
                           : 'bg-primary hover:bg-blue-600 text-white'
                       }`}
                   >
+                      {isUploading && <Loader2 size={16} className="animate-spin" />}
                       Save Trade
                   </button>
             </div>

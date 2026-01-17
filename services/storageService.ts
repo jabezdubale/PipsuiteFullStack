@@ -66,6 +66,16 @@ const DEFAULT_STRATEGIES: string[] = [
     'Gap-Fill'
 ];
 
+// --- Upload Service (Vercel Blob) ---
+
+export const uploadImage = async (filename: string, base64Data: string): Promise<string> => {
+    const response = await api<{ url: string }>('/upload', {
+        method: 'POST',
+        body: JSON.stringify({ filename, data: base64Data })
+    });
+    return response.url;
+};
+
 // --- Generic Settings (Theme, Columns, User Profile) ---
 
 export const getSetting = async <T>(key: string, defaultVal: T): Promise<T> => {

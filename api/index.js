@@ -3,6 +3,7 @@ require('dotenv').config();
 const express = require('express');
 const cors = require('cors');
 const { Pool } = require('pg');
+const { put } = require('@vercel/blob');
 
 const app = express();
 const PORT = 3001;
@@ -91,6 +92,9 @@ const mapTradeToParams = (t) => [
 
 // --- Middleware ---
 app.use(async (req, res, next) => {
+    // Skip DB check for upload route to allow it to function even if DB is connecting
+    if (req.path === '/api/upload') return next();
+
     const db = getDB();
     if (!db) {
         return res.status(500).json({ error: "Database configuration missing (DATABASE_URL)." });
@@ -193,6 +197,28 @@ const ensureSchema = async (db) => {
 };
 
 // ROUTES
+
+// Upload Route for Vercel Blob
+app.post('/api/upload', async (req, res) => {
+    const { filename, data } = req.body;
+    if (!data || !filename) return res.status(400).json({ error: "Missing data or filename" });
+
+    try {
+        // data is expected to be a Base64 Data URI
+        const base64Data = data.split(';base64,').pop();
+        const buffer = Buffer.from(base64Data, 'base64');
+
+        const blob = await put(filename, buffer, { 
+            access: 'public',
+            token: process.env.BLOB_READ_WRITE_TOKEN 
+        });
+
+        res.json({ url: blob.url });
+    } catch (err) {
+        console.error("Blob Upload Error:", err);
+        res.status(500).json({ error: "Upload failed: " + err.message });
+    }
+});
 
 app.get('/api/init', async (req, res) => {
     await ensureSchema(req.db);

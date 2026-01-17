@@ -1,13 +1,14 @@
 
 import React, { useState, useRef, useMemo, useEffect } from 'react';
 import { Trade, TradeType, TradeStatus, ASSETS, TradeOutcome, Session, OrderType, Account, TradePartial, TagGroup } from '../types';
-import { ArrowLeft, Trash2, Plus, X, Upload, ChevronDown, ChevronUp, Clipboard } from 'lucide-react';
+import { ArrowLeft, Trash2, Plus, X, Upload, ChevronDown, ChevronUp, Clipboard, Loader2 } from 'lucide-react';
 import { getSessionForTime } from '../utils/sessionHelpers';
 import CloseTradeModal from './CloseTradeModal';
 import { calculateAutoTags } from '../utils/autoTagLogic';
 import { toLocalInputString, formatDisplayDate } from '../utils/dateUtils';
 import { compressImage, addScreenshot } from '../utils/imageUtils';
 import { generateId } from '../utils/idUtils';
+import { uploadImage } from '../services/storageService';
 
 const SectionHeader = ({ title }: { title: string }) => (
   <h3 className="text-xs font-bold text-primary uppercase tracking-wider mb-3">{title}</h3>
@@ -93,6 +94,7 @@ const TradeDetail: React.FC<TradeDetailProps> = ({ trade, accounts, tagGroups, s
   const [isReopenModalOpen, setIsReopenModalOpen] = useState(false);
   const [isMissedModalOpen, setIsMissedModalOpen] = useState(false);
   const [selectedImage, setSelectedImage] = useState<string | null>(null);
+  const [isUploading, setIsUploading] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
   
   // Ref for Auto-Save
@@ -260,7 +262,7 @@ const TradeDetail: React.FC<TradeDetailProps> = ({ trade, accounts, tagGroups, s
 
   // Paste Listener
   useEffect(() => {
-    const handlePaste = (e: ClipboardEvent) => {
+    const handlePaste = async (e: ClipboardEvent) => {
       const items = e.clipboardData?.items;
       if (!items) return;
 
@@ -268,16 +270,24 @@ const TradeDetail: React.FC<TradeDetailProps> = ({ trade, accounts, tagGroups, s
         if (items[i].type.indexOf("image") !== -1) {
           const blob = items[i].getAsFile();
           if (blob) {
-             compressImage(blob).then(base64 => {
+             try {
+                 setIsUploading(true);
+                 const base64 = await compressImage(blob);
+                 const url = await uploadImage("pasted.jpg", base64);
                  setFormData((prev: any) => {
                     try {
-                        return { ...prev, screenshots: addScreenshot(prev.screenshots || [], base64) };
+                        return { ...prev, screenshots: addScreenshot(prev.screenshots || [], url) };
                     } catch (e: any) {
                         alert(e?.message || 'Unable to add screenshot.');
                         return prev;
                     }
                  });
-             });
+             } catch(e) {
+                 console.error(e);
+                 alert("Failed to upload image");
+             } finally {
+                 setIsUploading(false);
+             }
           }
         }
       }
@@ -295,11 +305,13 @@ const TradeDetail: React.FC<TradeDetailProps> = ({ trade, accounts, tagGroups, s
           for (const item of items) {
               const imageType = item.types.find(type => type.startsWith('image/'));
               if (imageType) {
+                  setIsUploading(true);
                   const blob = await item.getType(imageType);
                   const base64 = await compressImage(blob);
+                  const url = await uploadImage("pasted.jpg", base64);
                   setFormData((prev: any) => {
                     try {
-                        return { ...prev, screenshots: addScreenshot(prev.screenshots || [], base64) };
+                        return { ...prev, screenshots: addScreenshot(prev.screenshots || [], url) };
                     } catch (e: any) {
                         alert(e?.message || 'Unable to add screenshot.');
                         return prev;
@@ -312,6 +324,8 @@ const TradeDetail: React.FC<TradeDetailProps> = ({ trade, accounts, tagGroups, s
       } catch (err) {
           console.error("Clipboard access failed:", err);
           alert("Unable to access clipboard directly. Please use Ctrl+V.");
+      } finally {
+          setIsUploading(false);
       }
   };
 
@@ -510,22 +524,27 @@ const TradeDetail: React.FC<TradeDetailProps> = ({ trade, accounts, tagGroups, s
       }
   };
 
-  const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file) {
-      compressImage(file).then(base64 => {
+      try {
+          setIsUploading(true);
+          const base64 = await compressImage(file);
+          const url = await uploadImage(file.name, base64);
           setFormData((prev: any) => {
             try {
-                return { ...prev, screenshots: addScreenshot(prev.screenshots || [], base64) };
+                return { ...prev, screenshots: addScreenshot(prev.screenshots || [], url) };
             } catch (e: any) {
                 alert(e?.message || 'Unable to add screenshot.');
                 return prev;
             }
           });
-      }).catch(e => {
+      } catch (e) {
           console.error(e);
           alert("Image processing failed.");
-      });
+      } finally {
+          setIsUploading(false);
+      }
     }
   };
   
@@ -940,13 +959,14 @@ const TradeDetail: React.FC<TradeDetailProps> = ({ trade, accounts, tagGroups, s
                           <button 
                             type="button"
                             onClick={handlePasteClick}
-                            className="text-xs text-textMuted hover:text-textMain flex items-center gap-1"
+                            disabled={isUploading}
+                            className="text-xs text-textMuted hover:text-textMain flex items-center gap-1 disabled:opacity-50"
                             title="Paste from Clipboard"
                           >
-                             <Clipboard size={12} />
+                             {isUploading ? <Loader2 size={12} className="animate-spin" /> : <Clipboard size={12} />}
                           </button>
-                          <button onClick={() => fileInputRef.current?.click()} className="text-xs text-primary hover:underline flex items-center gap-1">
-                              <Upload size={12} /> Upload
+                          <button onClick={() => fileInputRef.current?.click()} disabled={isUploading} className="text-xs text-primary hover:underline flex items-center gap-1 disabled:opacity-50">
+                              {isUploading ? <Loader2 size={12} className="animate-spin" /> : <Upload size={12} />} Upload
                           </button>
                           <input type="file" ref={fileInputRef} className="hidden" accept="image/*" onChange={handleFileUpload} />
                       </div>

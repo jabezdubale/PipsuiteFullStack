@@ -1,11 +1,12 @@
 
 import React, { useState, useMemo, useEffect, useRef } from 'react';
 import { TagGroup, Session, TradeOutcome, ASSETS, TradeStatus, TradeType } from '../types';
-import { X, Check, Calculator, Clock, Upload, Clipboard, Trash2, Image as ImageIcon, Info, ChevronUp, ChevronDown, TrendingUp, TrendingDown, Slash } from 'lucide-react';
+import { X, Check, Calculator, Clock, Upload, Clipboard, Trash2, Image as ImageIcon, Info, ChevronUp, ChevronDown, TrendingUp, TrendingDown, Slash, Loader2 } from 'lucide-react';
 import { getSessionForTime } from '../utils/sessionHelpers';
 import { calculateAutoTags } from '../utils/autoTagLogic';
 import { toLocalInputString } from '../utils/dateUtils';
 import { compressImage, addScreenshot } from '../utils/imageUtils';
+import { uploadImage } from '../services/storageService';
 
 interface CloseTradeModalProps {
   currentData: any; // The current form data from TradeDetail
@@ -38,6 +39,7 @@ const CloseTradeModal: React.FC<CloseTradeModalProps> = ({ currentData, tagGroup
 
   const [expandedTagGroup, setExpandedTagGroup] = useState<string | null>(null);
   const [affectBalance, setAffectBalance] = useState(true);
+  const [isUploading, setIsUploading] = useState(false);
   
   // New Result State
   const [result, setResult] = useState<TradeStatus>(TradeStatus.BREAK_EVEN);
@@ -104,7 +106,7 @@ const CloseTradeModal: React.FC<CloseTradeModalProps> = ({ currentData, tagGroup
 
   // --- Paste Listener for Images ---
   useEffect(() => {
-    const handlePaste = (e: ClipboardEvent) => {
+    const handlePaste = async (e: ClipboardEvent) => {
       const items = e.clipboardData?.items;
       if (!items) return;
 
@@ -112,16 +114,24 @@ const CloseTradeModal: React.FC<CloseTradeModalProps> = ({ currentData, tagGroup
         if (items[i].type.indexOf("image") !== -1) {
           const blob = items[i].getAsFile();
           if (blob) {
-             compressImage(blob).then(base64 => {
+             try {
+                 setIsUploading(true);
+                 const base64 = await compressImage(blob);
+                 const url = await uploadImage("pasted.jpg", base64);
                  setFormData(prev => {
                     try {
-                      return { ...prev, screenshots: addScreenshot(prev.screenshots || [], base64) };
+                      return { ...prev, screenshots: addScreenshot(prev.screenshots || [], url) };
                     } catch (e: any) {
                       alert(e?.message || 'Unable to add screenshot.');
                       return prev;
                     }
                  });
-             });
+             } catch(e) {
+                 console.error(e);
+                 alert("Failed to upload image");
+             } finally {
+                 setIsUploading(false);
+             }
           }
         }
       }
@@ -207,22 +217,27 @@ const CloseTradeModal: React.FC<CloseTradeModalProps> = ({ currentData, tagGroup
     });
   };
 
-  const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file) {
-      compressImage(file).then(base64 => {
+      try {
+          setIsUploading(true);
+          const base64 = await compressImage(file);
+          const url = await uploadImage(file.name, base64);
           setFormData(prev => {
             try {
-              return { ...prev, screenshots: addScreenshot(prev.screenshots || [], base64) };
+              return { ...prev, screenshots: addScreenshot(prev.screenshots || [], url) };
             } catch (e: any) {
               alert(e?.message || 'Unable to add screenshot.');
               return prev;
             }
           });
-      }).catch(e => {
+      } catch (e) {
           console.error(e);
           alert("Image processing failed.");
-      });
+      } finally {
+          setIsUploading(false);
+      }
     }
   };
 
@@ -253,11 +268,13 @@ const CloseTradeModal: React.FC<CloseTradeModalProps> = ({ currentData, tagGroup
           for (const item of items) {
               const imageType = item.types.find(type => type.startsWith('image/'));
               if (imageType) {
+                  setIsUploading(true);
                   const blob = await item.getType(imageType);
                   const base64 = await compressImage(blob);
+                  const url = await uploadImage("pasted.jpg", base64);
                   setFormData(prev => {
                     try {
-                      return { ...prev, screenshots: addScreenshot(prev.screenshots || [], base64) };
+                      return { ...prev, screenshots: addScreenshot(prev.screenshots || [], url) };
                     } catch (e: any) {
                       alert(e?.message || 'Unable to add screenshot.');
                       return prev;
@@ -270,6 +287,8 @@ const CloseTradeModal: React.FC<CloseTradeModalProps> = ({ currentData, tagGroup
       } catch (err) {
           console.error("Clipboard access failed:", err);
           alert("Unable to access clipboard directly. Please use Ctrl+V.");
+      } finally {
+          setIsUploading(false);
       }
   };
 
@@ -582,16 +601,20 @@ const CloseTradeModal: React.FC<CloseTradeModalProps> = ({ currentData, tagGroup
                                     />
                                     <button 
                                         onClick={() => fileInputRef.current?.click()}
-                                        className="w-full py-2 bg-surface hover:bg-surfaceHighlight border border-border/60 hover:border-primary/50 text-textMuted hover:text-textMain rounded text-xs flex items-center justify-center gap-2 transition-colors"
+                                        disabled={isUploading}
+                                        className="w-full py-2 bg-surface hover:bg-surfaceHighlight border border-border/60 hover:border-primary/50 text-textMuted hover:text-textMain rounded text-xs flex items-center justify-center gap-2 transition-colors disabled:opacity-50"
                                     >
-                                        <Upload size={12} /> Upload File
+                                        {isUploading ? <Loader2 size={12} className="animate-spin" /> : <Upload size={12} />}
+                                        {isUploading ? 'Uploading...' : 'Upload File'}
                                     </button>
                                 </div>
                                 <button 
                                     onClick={handlePasteClick}
-                                    className="flex-1 py-2 bg-surface hover:bg-surfaceHighlight border border-border/60 hover:border-primary/50 text-textMuted hover:text-textMain rounded text-xs flex items-center justify-center gap-2 transition-colors"
+                                    disabled={isUploading}
+                                    className="flex-1 py-2 bg-surface hover:bg-surfaceHighlight border border-border/60 hover:border-primary/50 text-textMuted hover:text-textMain rounded text-xs flex items-center justify-center gap-2 transition-colors disabled:opacity-50"
                                 >
-                                    <Clipboard size={12} /> Paste Image
+                                    {isUploading ? <Loader2 size={12} className="animate-spin" /> : <Clipboard size={12} />}
+                                    Paste Image
                                 </button>
                              </div>
                              <p className="text-[10px] text-textMuted mt-2 text-center">
@@ -684,8 +707,14 @@ const CloseTradeModal: React.FC<CloseTradeModalProps> = ({ currentData, tagGroup
                 </button>
                 <button 
                     onClick={handleConfirm}
-                    className="px-6 py-2 bg-primary hover:bg-blue-600 text-white rounded-lg text-sm font-bold transition-colors shadow-lg shadow-primary/20 flex items-center gap-2"
+                    disabled={isUploading}
+                    className={`px-6 py-2 rounded-lg text-sm font-bold transition-colors shadow-lg shadow-primary/20 flex items-center gap-2 ${
+                        isUploading 
+                        ? 'bg-surfaceHighlight text-textMuted cursor-not-allowed' 
+                        : 'bg-primary hover:bg-blue-600 text-white'
+                    }`}
                 >
+                    {isUploading && <Loader2 size={16} className="animate-spin" />}
                     <Check size={16} /> Confirm Close
                 </button>
             </div>

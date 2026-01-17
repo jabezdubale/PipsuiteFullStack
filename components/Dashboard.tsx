@@ -284,7 +284,7 @@ const Dashboard: React.FC<DashboardProps> = ({ stats: initialStats, trades, tagG
       const winRate = (wins.length / totalTrades) * 100;
       const avgWin = wins.length ? totalWin / wins.length : 0;
       const avgLoss = losses.length ? totalLoss / losses.length : 0;
-      const profitFactor = totalLoss === 0 ? totalWin : totalWin / totalLoss;
+      const profitFactor = totalLoss === 0 ? (totalWin > 0 ? Infinity : 0) : totalWin / totalLoss;
 
       return { totalTrades, winRate, netPnL, avgWin, avgLoss, profitFactor };
   }, [dashboardTrades, closedTrades]);
@@ -293,7 +293,11 @@ const Dashboard: React.FC<DashboardProps> = ({ stats: initialStats, trades, tagG
       // Logic: Only closed trades, sorted by date DESC
       const validTrades = closedTrades
           .filter(t => t.status === TradeStatus.WIN || t.status === TradeStatus.LOSS || t.status === TradeStatus.BREAK_EVEN)
-          .sort((a,b) => new Date(b.entryDate).getTime() - new Date(a.entryDate).getTime());
+          .sort((a,b) => {
+              const bd = new Date(b.exitDate || b.entryDate || b.createdAt || 0).getTime();
+              const ad = new Date(a.exitDate || a.entryDate || a.createdAt || 0).getTime();
+              return bd - ad;
+          });
       
       if (validTrades.length === 0) return { count: 0, type: 'neutral' };
 
@@ -1004,7 +1008,7 @@ const Dashboard: React.FC<DashboardProps> = ({ stats: initialStats, trades, tagG
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
         <VitalCard label="Net P&L" value={`$${dashboardStats.netPnL.toLocaleString()}`} colorClass={dashboardStats.netPnL >= 0 ? 'text-profit' : 'text-loss'} icon={Activity} subValue={`${dashboardStats.totalTrades} Trades`} />
         <VitalCard label="Win Rate" value={`${dashboardStats.winRate.toFixed(1)}%`} colorClass="text-textMain" icon={Target} subValue={`Avg Win: $${dashboardStats.avgWin.toFixed(0)}`} trend={dashboardStats.winRate > 50 ? 'up' : 'down'} />
-        <VitalCard label="Profit Factor" value={dashboardStats.profitFactor.toFixed(2)} colorClass="text-textMain" icon={BarChart2} subValue={`Avg Loss: $${dashboardStats.avgLoss.toFixed(0)}`} />
+        <VitalCard label="Profit Factor" value={dashboardStats.profitFactor === Infinity ? '∞' : dashboardStats.profitFactor.toFixed(2)} colorClass="text-textMain" icon={BarChart2} subValue={`Avg Loss: $${dashboardStats.avgLoss.toFixed(0)}`} />
         <VitalCard label="Avg RR Ratio" value={avgRRRatio} colorClass="text-primary" icon={Zap} subValue="Planned" />
         <VitalCard 
             label="Current Streak" 

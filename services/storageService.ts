@@ -136,6 +136,17 @@ export const deleteAccount = async (accountId: string): Promise<void> => {
 
 // --- Trade Management ---
 
+export type BatchSaveResult = {
+    success: boolean;
+    updatedCount: number;
+    updatedIds: string[];
+};
+
+export type BatchDeleteResult = {
+    success: boolean;
+    deletedCount: number;
+};
+
 export const getTrades = async (userId?: string, accountId?: string): Promise<Trade[]> => {
     const params = new URLSearchParams();
     if (userId) params.append('userId', userId);
@@ -152,21 +163,21 @@ export const saveTrade = async (trade: Trade, balanceChange?: number): Promise<T
     });
 };
 
-// Batch import still returns a list
-export const saveTrades = async (newTrades: Trade[]): Promise<Trade[]> => {
-    return api<Trade[]>('/trades/batch', {
+// Batch update/import: returns a small summary to avoid wiping client state
+export const saveTrades = async (newTrades: Trade[]): Promise<BatchSaveResult> => {
+    return api<BatchSaveResult>('/trades/batch', {
         method: 'POST',
         body: JSON.stringify({ trades: newTrades })
     });
 };
 
-export const deleteTrade = async (id: string): Promise<{ success: boolean, id: string }> => {
-    return api<{ success: boolean, id: string }>(`/trades/${id}`, { method: 'DELETE' });
+export const deleteTrade = async (id: string): Promise<{ success: boolean; id: string; deleted: boolean }> => {
+    return api<{ success: boolean; id: string; deleted: boolean }>(`/trades/${id}`, { method: 'DELETE' });
 };
 
-export const deleteTrades = async (ids: string[]): Promise<Trade[]> => {
+export const deleteTrades = async (ids: string[]): Promise<BatchDeleteResult> => {
     // This is permanent delete
-    return api<Trade[]>('/trades/batch', {
+    return api<BatchDeleteResult>('/trades/batch', {
         method: 'DELETE',
         body: JSON.stringify({ ids })
     });

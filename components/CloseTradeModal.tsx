@@ -5,7 +5,7 @@ import { X, Check, Calculator, Clock, Upload, Clipboard, Trash2, Image as ImageI
 import { getSessionForTime } from '../utils/sessionHelpers';
 import { calculateAutoTags } from '../utils/autoTagLogic';
 import { toLocalInputString } from '../utils/dateUtils';
-import { compressImage } from '../utils/imageUtils';
+import { compressImage, addScreenshot } from '../utils/imageUtils';
 
 interface CloseTradeModalProps {
   currentData: any; // The current form data from TradeDetail
@@ -113,10 +113,14 @@ const CloseTradeModal: React.FC<CloseTradeModalProps> = ({ currentData, tagGroup
           const blob = items[i].getAsFile();
           if (blob) {
              compressImage(blob).then(base64 => {
-                 setFormData(prev => ({
-                    ...prev,
-                    screenshots: [...prev.screenshots, base64]
-                 }));
+                 setFormData(prev => {
+                    try {
+                      return { ...prev, screenshots: addScreenshot(prev.screenshots || [], base64) };
+                    } catch (e: any) {
+                      alert(e?.message || 'Unable to add screenshot.');
+                      return prev;
+                    }
+                 });
              });
           }
         }
@@ -207,10 +211,14 @@ const CloseTradeModal: React.FC<CloseTradeModalProps> = ({ currentData, tagGroup
     const file = e.target.files?.[0];
     if (file) {
       compressImage(file).then(base64 => {
-          setFormData(prev => ({
-            ...prev,
-            screenshots: [...prev.screenshots, base64]
-          }));
+          setFormData(prev => {
+            try {
+              return { ...prev, screenshots: addScreenshot(prev.screenshots || [], base64) };
+            } catch (e: any) {
+              alert(e?.message || 'Unable to add screenshot.');
+              return prev;
+            }
+          });
       }).catch(e => {
           console.error(e);
           alert("Image processing failed.");
@@ -220,10 +228,14 @@ const CloseTradeModal: React.FC<CloseTradeModalProps> = ({ currentData, tagGroup
 
   const handleAddImageFromUrl = () => {
       if (newImageUrl) {
-          setFormData(prev => ({
-              ...prev,
-              screenshots: [...prev.screenshots, newImageUrl]
-          }));
+          setFormData(prev => {
+              try {
+                return { ...prev, screenshots: addScreenshot(prev.screenshots || [], newImageUrl) };
+              } catch (e: any) {
+                alert(e?.message || 'Unable to add screenshot.');
+                return prev;
+              }
+          });
           setNewImageUrl('');
       }
   };
@@ -243,10 +255,14 @@ const CloseTradeModal: React.FC<CloseTradeModalProps> = ({ currentData, tagGroup
               if (imageType) {
                   const blob = await item.getType(imageType);
                   const base64 = await compressImage(blob);
-                  setFormData(prev => ({
-                    ...prev,
-                    screenshots: [...prev.screenshots, base64]
-                  }));
+                  setFormData(prev => {
+                    try {
+                      return { ...prev, screenshots: addScreenshot(prev.screenshots || [], base64) };
+                    } catch (e: any) {
+                      alert(e?.message || 'Unable to add screenshot.');
+                      return prev;
+                    }
+                  });
                   return;
               }
           }

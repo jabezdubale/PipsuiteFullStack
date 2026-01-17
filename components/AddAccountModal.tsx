@@ -1,6 +1,7 @@
 
 import React, { useState } from 'react';
 import { Account } from '../types';
+import { generateId } from '../utils/idUtils';
 import { X, Save, Check } from 'lucide-react';
 
 interface AddAccountModalProps {
@@ -22,7 +23,7 @@ const AddAccountModal: React.FC<AddAccountModalProps> = ({ onSave, onClose, user
     if (!formData.name) return;
 
     const newAccount: Account = {
-      id: `acc_${Date.now()}`,
+      id: generateId('acc'),
       userId: userId, // Link to current user
       name: formData.name,
       currency: formData.currency || 'USD',

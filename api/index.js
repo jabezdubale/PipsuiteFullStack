@@ -21,9 +21,13 @@ const getDB = () => {
         }
         pool = new Pool({
             connectionString: process.env.DATABASE_URL,
-            ssl: process.env.NODE_ENV === 'production' || process.env.DATABASE_URL.includes('sslmode=require') 
-                ? { rejectUnauthorized: false } 
-                : false
+            ssl: process.env.NODE_ENV === 'production' || process.env.DATABASE_URL.includes('sslmode=require')
+                ? { rejectUnauthorized: false }
+                : false,
+            // Serverless-friendly defaults
+            max: parseInt(process.env.PGPOOL_MAX || '3', 10),
+            idleTimeoutMillis: 10000,
+            connectionTimeoutMillis: 10000
         });
     }
     return pool;
@@ -458,47 +462,61 @@ app.post('/api/trades', async (req, res) => {
 
 // Atomic Trash
 app.post('/api/trades/trash', async (req, res) => {
-    const { ids, accountId } = req.body;
-    if (!ids || !ids.length) return res.status(400).json({ error: "No IDs provided" });
+    const { ids } = req.body;
+    if (!ids || !Array.isArray(ids) || ids.length === 0) {
+        return res.status(400).json({ error: 'No IDs provided' });
+    }
 
     const client = await req.db.connect();
     try {
         await client.query('BEGIN');
 
-        // 1. Get trades to be trashed to calculate balance reversal
-        const tradesRes = await client.query('SELECT * FROM trades WHERE id = ANY($1)', [ids]);
-        const tradesToTrash = tradesRes.rows;
+        // Only trash trades that are not already deleted
+        const tradesRes = await client.query(
+            'SELECT * FROM trades WHERE id = ANY($1) AND is_deleted = false FOR UPDATE',
+            [ids]
+        );
+        const rows = tradesRes.rows;
 
-        // 2. Calculate balance impact
+        if (rows.length === 0) {
+            await client.query('COMMIT');
+            return res.json([]);
+        }
+
+        // Guard: all selected trades must belong to the same account
+        const derivedAccountId = rows[0].account_id;
+        if (rows.some(r => r.account_id !== derivedAccountId)) {
+            throw Object.assign(new Error('Selected trades span multiple accounts.'), { statusCode: 400 });
+        }
+
+        // Calculate balance reversal (undo previously-applied PnL)
         let totalReversal = 0;
-        for (const row of tradesToTrash) {
+        for (const row of rows) {
             const t = parseTradeRow(row);
             if (t.isBalanceUpdated && t.pnl !== 0) {
-                // If trade was +$100, we need to subtract 100.
-                // If trade was -$50, we need to add 50.
                 totalReversal -= t.pnl;
             }
         }
 
-        // 3. Mark as deleted
         const now = new Date();
-        await client.query('UPDATE trades SET is_deleted = true, deleted_at = $1 WHERE id = ANY($2)', [now, ids]);
+        await client.query(
+            'UPDATE trades SET is_deleted = true, deleted_at = $1 WHERE id = ANY($2) AND is_deleted = false',
+            [now, ids]
+        );
 
-        // 4. Update Balance
-        if (accountId && totalReversal !== 0) {
-            await client.query('UPDATE accounts SET balance = balance + $1 WHERE id = $2', [totalReversal, accountId]);
+        if (totalReversal !== 0) {
+            await client.query('UPDATE accounts SET balance = balance + $1 WHERE id = $2', [totalReversal, derivedAccountId]);
         }
 
         await client.query('COMMIT');
-        
-        // Return updated list of IDs or the updated trades
-        // For simplicity, return the updated trades
+
         const result = await client.query('SELECT * FROM trades WHERE id = ANY($1)', [ids]);
         res.json(result.rows.map(parseTradeRow));
 
-    } catch(err) {
+    } catch (err) {
         await client.query('ROLLBACK');
-        res.status(500).json({ error: err.message });
+        const status = err?.statusCode || 500;
+        res.status(status).json({ error: err.message || 'Failed to trash trades.' });
     } finally {
         client.release();
     }
@@ -506,43 +524,59 @@ app.post('/api/trades/trash', async (req, res) => {
 
 // Atomic Restore
 app.post('/api/trades/restore', async (req, res) => {
-    const { ids, accountId } = req.body;
-    if (!ids || !ids.length) return res.status(400).json({ error: "No IDs provided" });
+    const { ids } = req.body;
+    if (!ids || !Array.isArray(ids) || ids.length === 0) {
+        return res.status(400).json({ error: 'No IDs provided' });
+    }
 
     const client = await req.db.connect();
     try {
         await client.query('BEGIN');
 
-        // 1. Get trades to restore
-        const tradesRes = await client.query('SELECT * FROM trades WHERE id = ANY($1)', [ids]);
-        const tradesToRestore = tradesRes.rows;
+        // Only restore trades that are currently deleted
+        const tradesRes = await client.query(
+            'SELECT * FROM trades WHERE id = ANY($1) AND is_deleted = true FOR UPDATE',
+            [ids]
+        );
+        const rows = tradesRes.rows;
 
-        // 2. Calculate balance application
+        if (rows.length === 0) {
+            await client.query('COMMIT');
+            return res.json([]);
+        }
+
+        const derivedAccountId = rows[0].account_id;
+        if (rows.some(r => r.account_id !== derivedAccountId)) {
+            throw Object.assign(new Error('Selected trades span multiple accounts.'), { statusCode: 400 });
+        }
+
+        // Re-apply PnL for trades that previously affected balance
         let totalApplication = 0;
-        for (const row of tradesToRestore) {
+        for (const row of rows) {
             const t = parseTradeRow(row);
             if (t.isBalanceUpdated && t.pnl !== 0) {
-                // Re-apply PnL
                 totalApplication += t.pnl;
             }
         }
 
-        // 3. Unmark deleted
-        await client.query('UPDATE trades SET is_deleted = false, deleted_at = NULL WHERE id = ANY($1)', [ids]);
+        await client.query(
+            'UPDATE trades SET is_deleted = false, deleted_at = NULL WHERE id = ANY($1) AND is_deleted = true',
+            [ids]
+        );
 
-        // 4. Update Balance
-        if (accountId && totalApplication !== 0) {
-            await client.query('UPDATE accounts SET balance = balance + $1 WHERE id = $2', [totalApplication, accountId]);
+        if (totalApplication !== 0) {
+            await client.query('UPDATE accounts SET balance = balance + $1 WHERE id = $2', [totalApplication, derivedAccountId]);
         }
 
         await client.query('COMMIT');
-        
+
         const result = await client.query('SELECT * FROM trades WHERE id = ANY($1)', [ids]);
         res.json(result.rows.map(parseTradeRow));
 
-    } catch(err) {
+    } catch (err) {
         await client.query('ROLLBACK');
-        res.status(500).json({ error: err.message });
+        const status = err?.statusCode || 500;
+        res.status(status).json({ error: err.message || 'Failed to restore trades.' });
     } finally {
         client.release();
     }
@@ -550,70 +584,75 @@ app.post('/api/trades/restore', async (req, res) => {
 
 app.post('/api/trades/batch', async (req, res) => {
     const { trades } = req.body;
-    if (!trades || !Array.isArray(trades)) {
-        return res.status(400).json({ error: "Invalid data format." });
+    if (!trades || !Array.isArray(trades) || trades.length === 0) {
+        return res.status(400).json({ error: 'Invalid data format.' });
     }
 
     const client = await req.db.connect();
     try {
         await client.query('BEGIN');
+
         const queryText = `
             INSERT INTO trades (
-                id, account_id, symbol, type, status, outcome,
-                entry_price, exit_price, stop_loss, take_profit, quantity,
-                fees, main_pnl, pnl, balance,
-                created_at, entry_date, exit_date, entry_time, exit_time,
-                entry_session, exit_session, order_type, setup,
-                leverage, risk_percentage, notes, emotional_notes,
-                tags, screenshots, partials,
-                is_deleted, deleted_at, is_balance_updated
-            ) VALUES (
-                $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15,
-                $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27, $28,
-                $29, $30, $31, $32, $33, $34
-            ) ON CONFLICT (id) DO UPDATE SET
-                symbol = EXCLUDED.symbol, type = EXCLUDED.type, status = EXCLUDED.status, outcome = EXCLUDED.outcome,
-                entry_price = EXCLUDED.entry_price, exit_price = EXCLUDED.exit_price, 
-                stop_loss = EXCLUDED.stop_loss, take_profit = EXCLUDED.take_profit, quantity = EXCLUDED.quantity,
-                fees = EXCLUDED.fees, main_pnl = EXCLUDED.main_pnl, pnl = EXCLUDED.pnl, balance = EXCLUDED.balance,
-                entry_date = EXCLUDED.entry_date, exit_date = EXCLUDED.exit_date,
-                entry_time = EXCLUDED.entry_time, exit_time = EXCLUDED.exit_time,
-                entry_session = EXCLUDED.entry_session, exit_session = EXCLUDED.exit_session,
-                order_type = EXCLUDED.order_type, setup = EXCLUDED.setup,
-                notes = EXCLUDED.notes, emotional_notes = EXCLUDED.emotional_notes,
-                tags = EXCLUDED.tags, screenshots = EXCLUDED.screenshots, partials = EXCLUDED.partials,
-                is_deleted = EXCLUDED.is_deleted, deleted_at = EXCLUDED.deleted_at, is_balance_updated = EXCLUDED.is_balance_updated
+                id, account_id, symbol, type, status, outcome, entry_price, exit_price, stop_loss, take_profit, quantity,
+                fees, main_pnl, pnl, balance, created_at, entry_date, exit_date, entry_time, exit_time, entry_session,
+                exit_session, order_type, setup, leverage, risk_percentage, notes, emotional_notes, tags, screenshots,
+                partials, is_deleted, deleted_at, is_balance_updated
+            )
+            VALUES (
+                $1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,
+                $12,$13,$14,$15,$16,$17,$18,$19,$20,$21,
+                $22,$23,$24,$25,$26,$27,$28,$29,$30,
+                $31,$32,$33,$34
+            )
+            ON CONFLICT (id) DO UPDATE SET
+                account_id=EXCLUDED.account_id, symbol=EXCLUDED.symbol, type=EXCLUDED.type, status=EXCLUDED.status,
+                outcome=EXCLUDED.outcome, entry_price=EXCLUDED.entry_price, exit_price=EXCLUDED.exit_price,
+                stop_loss=EXCLUDED.stop_loss, take_profit=EXCLUDED.take_profit, quantity=EXCLUDED.quantity,
+                fees=EXCLUDED.fees, main_pnl=EXCLUDED.main_pnl, pnl=EXCLUDED.pnl, balance=EXCLUDED.balance,
+                created_at=EXCLUDED.created_at, entry_date=EXCLUDED.entry_date, exit_date=EXCLUDED.exit_date,
+                entry_time=EXCLUDED.entry_time, exit_time=EXCLUDED.exit_time, entry_session=EXCLUDED.entry_session,
+                exit_session=EXCLUDED.exit_session, order_type=EXCLUDED.order_type, setup=EXCLUDED.setup,
+                leverage=EXCLUDED.leverage, risk_percentage=EXCLUDED.risk_percentage, notes=EXCLUDED.notes,
+                emotional_notes=EXCLUDED.emotional_notes, tags=EXCLUDED.tags, screenshots=EXCLUDED.screenshots,
+                partials=EXCLUDED.partials, is_deleted=EXCLUDED.is_deleted, deleted_at=EXCLUDED.deleted_at,
+                is_balance_updated=EXCLUDED.is_balance_updated
         `;
 
-        let accountId = null;
         for (const t of trades) {
             await client.query(queryText, mapTradeToParams(t));
-            if (!accountId) accountId = t.accountId;
         }
 
         await client.query('COMMIT');
-        
-        let result;
-        if (accountId) {
-             result = await client.query('SELECT * FROM trades WHERE account_id = $1 ORDER BY entry_date DESC', [accountId]);
-        } else {
-             result = await client.query('SELECT * FROM trades ORDER BY entry_date DESC LIMIT 100');
-        }
-        res.json(result.rows.map(parseTradeRow));
+
+        res.json({
+            success: true,
+            updatedCount: trades.length,
+            updatedIds: trades.map(t => t.id)
+        });
     } catch (err) {
         await client.query('ROLLBACK');
+        if (err.code === '42P01' || err.code === '42703') {
+            await ensureSchema(req.db);
+            return res.status(500).json({ error: 'Schema updated. Please retry.' });
+        }
         res.status(500).json({ error: err.message });
     } finally {
-        if (client) client.release();
+        client.release();
     }
 });
 
 app.delete('/api/trades/batch', async (req, res) => {
     const { ids } = req.body;
+    if (!ids || !Array.isArray(ids) || ids.length === 0) {
+        return res.status(400).json({ error: 'No IDs provided.' });
+    }
+
     try {
-        await req.db.query('DELETE FROM trades WHERE id = ANY($1)', [ids]);
-        res.json([]);
+        const result = await req.db.query('DELETE FROM trades WHERE id = ANY($1)', [ids]);
+        res.json({ success: true, deletedCount: result.rowCount || 0 });
     } catch (err) {
+        if (err.code === '42P01') return res.json({ success: true, deletedCount: 0 });
         res.status(500).json({ error: err.message });
     }
 });
@@ -621,9 +660,10 @@ app.delete('/api/trades/batch', async (req, res) => {
 app.delete('/api/trades/:id', async (req, res) => {
     const { id } = req.params;
     try {
-        await req.db.query('DELETE FROM trades WHERE id = $1', [id]);
-        res.json({ success: true, id }); 
+        const result = await req.db.query('DELETE FROM trades WHERE id = $1', [id]);
+        res.json({ success: true, id, deleted: (result.rowCount || 0) > 0 });
     } catch (err) {
+        if (err.code === '42P01') return res.json({ success: true, id, deleted: false });
         res.status(500).json({ error: err.message });
     }
 });

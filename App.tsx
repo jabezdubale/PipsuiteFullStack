@@ -18,7 +18,8 @@ import { extractTradeParamsFromImage } from './services/geminiService';
 import { Trade, TradeStats, Account, TradeType, TradeStatus, ASSETS, TagGroup, OrderType, Session, TradeOutcome, User } from './types';
 import { X, ChevronDown, Calculator, TrendingUp, TrendingDown, RefreshCw, Loader2, Upload, Plus, Trash2, Clipboard, ChevronUp, Eraser, User as UserIcon, Database } from 'lucide-react';
 import UserModal from './components/UserModal';
-import { compressImage } from './utils/imageUtils';
+import { compressImage, addScreenshot } from './utils/imageUtils';
+import { generateId } from './utils/idUtils';
 
 function App() {
   const [activeTab, setActiveTab] = useState('dashboard'); 
@@ -152,7 +153,7 @@ function App() {
   const handleUserSave = async (userData: Partial<User>) => {
       try {
           const userToSave: User = {
-              id: editingUser ? editingUser.id : `user_${Date.now()}`,
+              id: editingUser ? editingUser.id : generateId('user'),
               name: userData.name!,
               geminiApiKey: userData.geminiApiKey!,
               twelveDataApiKey: userData.twelveDataApiKey!
@@ -164,7 +165,7 @@ function App() {
 
           if (!editingUser) {
               const defaultAccount: Account = {
-                  id: `acc_${Date.now()}_first`,
+                  id: generateId('acc'),
                   userId: userToSave.id,
                   name: "First Account",
                   currency: 'USD',
@@ -237,10 +238,14 @@ function App() {
           if (blob) {
             // Compress before setting
             compressImage(blob).then(base64 => {
-                 setNewTradeForm((prev: any) => ({
-                    ...prev,
-                    screenshots: [...(prev.screenshots || []), base64]
-                 }));
+                 setNewTradeForm((prev: any) => {
+                    try {
+                        return { ...prev, screenshots: addScreenshot(prev.screenshots || [], base64) };
+                    } catch (e: any) {
+                        alert(e?.message || 'Unable to add screenshot.');
+                        return prev;
+                    }
+                 });
             });
           }
         }
@@ -456,10 +461,8 @@ function App() {
 
   const handleImportTrades = async (newTrades: Trade[]) => {
       try {
-          const updatedTrades = await saveTrades(newTrades);
-          // Batch import returns all trades, so we can set it directly? 
-          // Actually backend batch returns *filtered* list. 
-          // Better to refetch or merge. For simplicity, refetch.
+          await saveTrades(newTrades);
+          // Refetch to keep client state consistent
           if (currentUser) {
               const freshTrades = await getTrades(currentUser.id);
               setTrades(freshTrades);
@@ -635,10 +638,14 @@ function App() {
     const file = e.target.files?.[0];
     if (file) {
       compressImage(file).then(base64String => {
-        setNewTradeForm((prev: any) => ({
-            ...prev,
-            screenshots: [...(prev.screenshots || []), base64String]
-        }));
+        setNewTradeForm((prev: any) => {
+            try {
+                return { ...prev, screenshots: addScreenshot(prev.screenshots || [], base64String) };
+            } catch (e: any) {
+                alert(e?.message || 'Unable to add screenshot.');
+                return prev;
+            }
+        });
       }).catch(err => {
           console.error(err);
           alert("Error processing image.");
@@ -648,10 +655,14 @@ function App() {
 
   const handleAddImageFromUrl = () => {
       if (newImageUrl) {
-          setNewTradeForm((prev: any) => ({
-              ...prev,
-              screenshots: [...(prev.screenshots || []), newImageUrl]
-          }));
+          setNewTradeForm((prev: any) => {
+              try {
+                  return { ...prev, screenshots: addScreenshot(prev.screenshots || [], newImageUrl) };
+              } catch (e: any) {
+                  alert(e?.message || 'Unable to add screenshot.');
+                  return prev;
+              }
+          });
           setNewImageUrl('');
       }
   }
@@ -715,7 +726,7 @@ function App() {
     const isoString = now.toISOString();
 
     const newTrade: Trade = {
-      id: Date.now().toString(),
+      id: generateId('trade'),
       accountId: selectedAccountId,
       symbol: (newTradeForm.symbol || 'XAUUSD').toUpperCase(),
       type: determinedType,

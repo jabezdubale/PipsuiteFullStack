@@ -3,6 +3,7 @@ import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { Trade, TradeType, TradeStatus, AVAILABLE_COLUMNS, ColumnKey, ASSETS, TradeOutcome, OrderType, Session, TagGroup } from '../types';
 import { Trash2, Settings, Eye, X, ChevronLeft, ChevronRight, Check, Download, Upload, GripVertical, MousePointer2, CheckSquare, RotateCcw, ChevronDown, ChevronUp, Filter, Loader2 } from 'lucide-react';
 import { calculateAutoTags } from '../utils/autoTagLogic';
+import { generateId } from '../utils/idUtils';
 import { getSetting, saveSetting } from '../services/storageService';
 
 interface TradeListProps {
@@ -563,7 +564,7 @@ const TradeList: React.FC<TradeListProps> = ({ trades, selectedAccountId, onTrad
               const exitDate = parseDate(getValue(idx.exitDate));
 
               const trade: Trade = {
-                  id: `imported_${Date.now()}_${i}`,
+                  id: generateId('imported'),
                   accountId: selectedAccountId, // Ensure valid account ID
                   symbol: getValue(idx.symbol) || 'UNKNOWN',
                   type: (getValue(idx.type) as TradeType) || TradeType.LONG,

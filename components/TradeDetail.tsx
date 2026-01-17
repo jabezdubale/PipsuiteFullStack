@@ -6,7 +6,8 @@ import { getSessionForTime } from '../utils/sessionHelpers';
 import CloseTradeModal from './CloseTradeModal';
 import { calculateAutoTags } from '../utils/autoTagLogic';
 import { toLocalInputString, formatDisplayDate } from '../utils/dateUtils';
-import { compressImage } from '../utils/imageUtils';
+import { compressImage, addScreenshot } from '../utils/imageUtils';
+import { generateId } from '../utils/idUtils';
 
 const SectionHeader = ({ title }: { title: string }) => (
   <h3 className="text-xs font-bold text-primary uppercase tracking-wider mb-3">{title}</h3>
@@ -268,10 +269,14 @@ const TradeDetail: React.FC<TradeDetailProps> = ({ trade, accounts, tagGroups, s
           const blob = items[i].getAsFile();
           if (blob) {
              compressImage(blob).then(base64 => {
-                 setFormData((prev: any) => ({
-                    ...prev,
-                    screenshots: [...prev.screenshots, base64]
-                 }));
+                 setFormData((prev: any) => {
+                    try {
+                        return { ...prev, screenshots: addScreenshot(prev.screenshots || [], base64) };
+                    } catch (e: any) {
+                        alert(e?.message || 'Unable to add screenshot.');
+                        return prev;
+                    }
+                 });
              });
           }
         }
@@ -292,10 +297,14 @@ const TradeDetail: React.FC<TradeDetailProps> = ({ trade, accounts, tagGroups, s
               if (imageType) {
                   const blob = await item.getType(imageType);
                   const base64 = await compressImage(blob);
-                  setFormData((prev: any) => ({
-                    ...prev,
-                    screenshots: [...prev.screenshots, base64]
-                  }));
+                  setFormData((prev: any) => {
+                    try {
+                        return { ...prev, screenshots: addScreenshot(prev.screenshots || [], base64) };
+                    } catch (e: any) {
+                        alert(e?.message || 'Unable to add screenshot.');
+                        return prev;
+                    }
+                  });
                   return;
               }
           }
@@ -478,7 +487,7 @@ const TradeDetail: React.FC<TradeDetailProps> = ({ trade, accounts, tagGroups, s
         isoDate = new Date(newPartial.dateTime).toISOString();
     }
     const p: TradePartial = {
-        id: Date.now().toString(),
+        id: generateId('partial'),
         quantity: parseFloat(newPartial.lot),
         pnl: parseFloat(newPartial.pnl),
         price: newPartial.price ? parseFloat(newPartial.price) : undefined,
@@ -505,10 +514,14 @@ const TradeDetail: React.FC<TradeDetailProps> = ({ trade, accounts, tagGroups, s
     const file = e.target.files?.[0];
     if (file) {
       compressImage(file).then(base64 => {
-          setFormData((prev: any) => ({
-            ...prev,
-            screenshots: [...prev.screenshots, base64]
-          }));
+          setFormData((prev: any) => {
+            try {
+                return { ...prev, screenshots: addScreenshot(prev.screenshots || [], base64) };
+            } catch (e: any) {
+                alert(e?.message || 'Unable to add screenshot.');
+                return prev;
+            }
+          });
       }).catch(e => {
           console.error(e);
           alert("Image processing failed.");

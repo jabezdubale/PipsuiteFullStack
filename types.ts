@@ -90,6 +90,8 @@ export interface Trade {
   exitPrice?: number;
   takeProfit?: number;
   stopLoss?: number;
+  finalTakeProfit?: number; // TP at close
+  finalStopLoss?: number;   // SL at close
   
   // Sizing & Risk
   leverage?: number;
@@ -146,8 +148,10 @@ export const AVAILABLE_COLUMNS: { key: ColumnKey; label: string }[] = [
   { key: 'exitPrice', label: 'Exit Price' },
   { key: 'exitTime', label: 'Exit Time' },
   { key: 'exitSession', label: 'Exit Session' },
-  { key: 'stopLoss', label: 'Stop Loss' },
-  { key: 'takeProfit', label: 'Take Profit' },
+  { key: 'stopLoss', label: 'Entry SL' },
+  { key: 'takeProfit', label: 'Entry TP' },
+  { key: 'finalStopLoss', label: 'Final SL' },
+  { key: 'finalTakeProfit', label: 'Final TP' },
   { key: 'slFilled', label: 'Stop Loss Filled' },
   { key: 'tpFilled', label: 'Take Profit Filled' },
   { key: 'quantity', label: 'Lot Size' },

@@ -1,7 +1,7 @@
 
 import React, { useState, useRef, useMemo, useEffect } from 'react';
 import { Trade, TradeType, TradeStatus, ASSETS, TradeOutcome, Session, OrderType, Account, TradePartial, TagGroup } from '../types';
-import { ArrowLeft, Trash2, Plus, X, Upload, ChevronDown, ChevronUp, Clipboard, Loader2 } from 'lucide-react';
+import { ArrowLeft, Trash2, Plus, X, Upload, ChevronDown, ChevronUp, Clipboard, Loader2, Copy } from 'lucide-react';
 import { getSessionForTime } from '../utils/sessionHelpers';
 import CloseTradeModal from './CloseTradeModal';
 import { calculateAutoTags } from '../utils/autoTagLogic';
@@ -85,6 +85,8 @@ const TradeDetail: React.FC<TradeDetailProps> = ({ trade, accounts, tagGroups, s
     fees: trade.fees.toString(),
     takeProfit: trade.takeProfit ? trade.takeProfit.toString() : '',
     stopLoss: trade.stopLoss ? trade.stopLoss.toString() : '',
+    finalTakeProfit: trade.finalTakeProfit ? trade.finalTakeProfit.toString() : '',
+    finalStopLoss: trade.finalStopLoss ? trade.finalStopLoss.toString() : '',
     setup: trade.setup || ''
   });
 
@@ -213,6 +215,8 @@ const TradeDetail: React.FC<TradeDetailProps> = ({ trade, accounts, tagGroups, s
       const fees = typeof currentFinancials.feesDisplay === 'number' ? currentFinancials.feesDisplay : 0;
       const takeProfit = parseFloat(currentFormData.takeProfit) || undefined;
       const stopLoss = parseFloat(currentFormData.stopLoss) || undefined;
+      const finalTakeProfit = parseFloat(currentFormData.finalTakeProfit) || undefined;
+      const finalStopLoss = parseFloat(currentFormData.finalStopLoss) || undefined;
       const mainPnl = currentFormData.mainPnl === '' ? undefined : parseFloat(currentFormData.mainPnl);
 
       const updatedTrade: Trade = {
@@ -224,6 +228,8 @@ const TradeDetail: React.FC<TradeDetailProps> = ({ trade, accounts, tagGroups, s
           fees,
           takeProfit,
           stopLoss,
+          finalTakeProfit,
+          finalStopLoss,
           mainPnl,
           pnl: net,
           status,
@@ -466,6 +472,8 @@ const TradeDetail: React.FC<TradeDetailProps> = ({ trade, accounts, tagGroups, s
         fees: typeof calculatedFinancials.feesDisplay === 'number' ? calculatedFinancials.feesDisplay : 0, 
         takeProfit: updatedFormData.takeProfit ? parseFloat(updatedFormData.takeProfit) : undefined,
         stopLoss: updatedFormData.stopLoss ? parseFloat(updatedFormData.stopLoss) : undefined,
+        finalTakeProfit: updatedFormData.finalTakeProfit ? parseFloat(updatedFormData.finalTakeProfit) : undefined,
+        finalStopLoss: updatedFormData.finalStopLoss ? parseFloat(updatedFormData.finalStopLoss) : undefined,
         mainPnl: updatedFormData.mainPnl === '' ? undefined : parseFloat(updatedFormData.mainPnl),
         pnl: net,
         status
@@ -736,16 +744,61 @@ const TradeDetail: React.FC<TradeDetailProps> = ({ trade, accounts, tagGroups, s
                       </div>
 
                       <div className="grid grid-cols-2 gap-4">
-                          <InputGroup label="Stop Loss">
+                          <InputGroup label="Entry SL">
                               <div className="relative">
                                 <MinimalInput type="number" step="any" value={formData.stopLoss} onChange={(e) => handleChange('stopLoss', e.target.value)} placeholder="-" disabled={isClosed} />
                                 {slPips && <span className="absolute right-2 top-1/2 -translate-y-1/2 text-[10px] text-textMuted font-mono">{slPips} pips</span>}
                               </div>
                           </InputGroup>
-                          <InputGroup label="Take Profit">
+                          <InputGroup label="Entry TP">
                               <div className="relative">
                                 <MinimalInput type="number" step="any" value={formData.takeProfit} onChange={(e) => handleChange('takeProfit', e.target.value)} placeholder="-" disabled={isClosed} />
                                 {tpPips && <span className="absolute right-2 top-1/2 -translate-y-1/2 text-[10px] text-textMuted font-mono">{tpPips} pips</span>}
+                              </div>
+                          </InputGroup>
+                      </div>
+
+                      <div className="grid grid-cols-2 gap-4">
+                          <InputGroup label="Final SL">
+                              <div className="flex items-center gap-1">
+                                  <MinimalInput 
+                                    type="number" 
+                                    step="any" 
+                                    value={formData.finalStopLoss} 
+                                    onChange={(e) => handleChange('finalStopLoss', e.target.value)} 
+                                    placeholder="-" 
+                                    disabled={isClosed} 
+                                  />
+                                  <button 
+                                    type="button"
+                                    onClick={() => handleChange('finalStopLoss', formData.stopLoss)}
+                                    className="px-2 py-1.5 bg-surfaceHighlight border border-border/40 rounded-md text-[10px] text-textMuted hover:text-textMain hover:border-primary/50 transition-colors disabled:opacity-50"
+                                    title="Copy Entry SL"
+                                    disabled={isClosed}
+                                  >
+                                    same
+                                  </button>
+                              </div>
+                          </InputGroup>
+                          <InputGroup label="Final TP">
+                              <div className="flex items-center gap-1">
+                                  <MinimalInput 
+                                    type="number" 
+                                    step="any" 
+                                    value={formData.finalTakeProfit} 
+                                    onChange={(e) => handleChange('finalTakeProfit', e.target.value)} 
+                                    placeholder="-" 
+                                    disabled={isClosed} 
+                                  />
+                                  <button 
+                                    type="button"
+                                    onClick={() => handleChange('finalTakeProfit', formData.takeProfit)}
+                                    className="px-2 py-1.5 bg-surfaceHighlight border border-border/40 rounded-md text-[10px] text-textMuted hover:text-textMain hover:border-primary/50 transition-colors disabled:opacity-50"
+                                    title="Copy Entry TP"
+                                    disabled={isClosed}
+                                  >
+                                    same
+                                  </button>
                               </div>
                           </InputGroup>
                       </div>

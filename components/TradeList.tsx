@@ -234,7 +234,7 @@ const TradeList: React.FC<TradeListProps> = ({ trades, selectedAccountId, onTrad
 
   const getFilterType = (key: string): ColumnFilterState['type'] | null => {
       if (['createdAt', 'entryDate', 'exitDate', 'entryTime', 'exitTime'].includes(key)) return 'date';
-      if (['pnl', 'mainPnl', 'fees', 'quantity', 'entryPrice', 'exitPrice', 'stopLoss', 'takeProfit', 'rr', 'plannedReward', 'partialsCount', 'partialProfit', 'screenshotsCount'].includes(key)) return 'number';
+      if (['pnl', 'mainPnl', 'fees', 'quantity', 'entryPrice', 'exitPrice', 'stopLoss', 'takeProfit', 'finalStopLoss', 'finalTakeProfit', 'rr', 'plannedReward', 'partialsCount', 'partialProfit', 'screenshotsCount'].includes(key)) return 'number';
       if (key === 'tags') return 'tags';
       if (['notes', 'emotionalNotes', 'screenshots'].includes(key)) return null; 
       return 'select'; 
@@ -390,8 +390,19 @@ const TradeList: React.FC<TradeListProps> = ({ trades, selectedAccountId, onTrad
         ...dataToExport.map(row => {
             return keys.map(k => {
                 let val: any;
-                if (k === 'symbol') val = row.symbol;
-                else val = getCellValue(row, k as ColumnKey);
+                // For numeric fields, try to get raw data for better CSV compatibility (no commas)
+                // This ensures re-importing works reliably without needing complex parsing logic
+                const numericKeys = ['entryPrice', 'exitPrice', 'stopLoss', 'takeProfit', 'finalStopLoss', 'finalTakeProfit', 'quantity', 'fees', 'mainPnl', 'pnl'];
+                
+                if (k === 'symbol') {
+                    val = row.symbol;
+                } else if (numericKeys.includes(k as string)) {
+                    // @ts-ignore
+                    val = row[k];
+                    if (val === undefined || val === null) val = '';
+                } else {
+                    val = getCellValue(row, k as ColumnKey);
+                }
                 
                 if (val === null || val === undefined) return '';
                 
@@ -494,8 +505,10 @@ const TradeList: React.FC<TradeListProps> = ({ trades, selectedAccountId, onTrad
             exitPrice: getIndex(['exitprice', 'exit', 'closeprice']),
             exitDate: getIndex(['exittime', 'exitdate', 'closedate']),
             exitSession: getIndex(['exitsession']),
-            stopLoss: getIndex(['stoploss', 'sl']),
-            takeProfit: getIndex(['takeprofit', 'tp']),
+            stopLoss: getIndex(['stoploss', 'sl', 'entrysl']),
+            takeProfit: getIndex(['takeprofit', 'tp', 'entrytp']),
+            finalStopLoss: getIndex(['finalstoploss', 'finalsl', 'fsl']),
+            finalTakeProfit: getIndex(['finaltakeprofit', 'finaltp', 'ftp']),
             quantity: getIndex(['lotsize', 'quantity', 'size', 'volume']),
             outcome: getIndex(['outcome', 'result']),
             orderType: getIndex(['ordertype']),
@@ -609,6 +622,8 @@ const TradeList: React.FC<TradeListProps> = ({ trades, selectedAccountId, onTrad
                   exitSession: getValue(idx.exitSession),
                   stopLoss: getValue(idx.stopLoss) ? parseFloat(getValue(idx.stopLoss)!) : undefined,
                   takeProfit: getValue(idx.takeProfit) ? parseFloat(getValue(idx.takeProfit)!) : undefined,
+                  finalStopLoss: getValue(idx.finalStopLoss) ? parseFloat(getValue(idx.finalStopLoss)!) : undefined,
+                  finalTakeProfit: getValue(idx.finalTakeProfit) ? parseFloat(getValue(idx.finalTakeProfit)!) : undefined,
                   quantity: parseFloat(getValue(idx.quantity) || '0') || 0,
                   outcome: outcome,
                   status: status,
@@ -723,6 +738,8 @@ const TradeList: React.FC<TradeListProps> = ({ trades, selectedAccountId, onTrad
       case 'exitPrice':
       case 'stopLoss':
       case 'takeProfit':
+      case 'finalStopLoss':
+      case 'finalTakeProfit':
       case 'fees':
         // @ts-ignore
         return trade[key]?.toLocaleString() || '-';

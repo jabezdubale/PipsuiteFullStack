@@ -30,6 +30,10 @@ const CloseTradeModal: React.FC<CloseTradeModalProps> = ({ currentData, tagGroup
     exitTime: currentData.exitTime || '',
     exitSession: currentData.exitSession || Session.NONE,
 
+    // Final SL/TP
+    finalStopLoss: currentData.finalStopLoss ? currentData.finalStopLoss.toString() : '',
+    finalTakeProfit: currentData.finalTakeProfit ? currentData.finalTakeProfit.toString() : '',
+
     // Journals
     notes: currentData.notes || '',
     emotionalNotes: currentData.emotionalNotes || '',
@@ -327,7 +331,10 @@ const CloseTradeModal: React.FC<CloseTradeModalProps> = ({ currentData, tagGroup
         exitDate: finalExitDate,
         exitSession: finalExitSession,
         outcome: TradeOutcome.CLOSED,
-        affectBalance // Pass the checkbox state back
+        affectBalance, // Pass the checkbox state back
+        // Explicitly convert Final SL/TP to numbers for DB persistence
+        finalStopLoss: formData.finalStopLoss ? parseFloat(formData.finalStopLoss) : undefined,
+        finalTakeProfit: formData.finalTakeProfit ? parseFloat(formData.finalTakeProfit) : undefined
     });
   };
 
@@ -534,6 +541,52 @@ const CloseTradeModal: React.FC<CloseTradeModalProps> = ({ currentData, tagGroup
                                         onChange={(e) => handleDateTimeChange('exit', e.target.value)}
                                         className="w-full bg-surface border border-border rounded-lg px-2 py-1.5 text-xs text-textMain focus:outline-none focus:border-primary"
                                     />
+                                </div>
+                            </div>
+
+                            {/* Final SL / TP Row */}
+                            <div className="grid grid-cols-2 gap-4">
+                                <div>
+                                    <label className="block text-xs font-medium text-textMuted mb-1.5">Final SL</label>
+                                    <div className="flex gap-1.5">
+                                        <input 
+                                            type="number" 
+                                            step="any" 
+                                            value={formData.finalStopLoss} 
+                                            onChange={(e) => setFormData({...formData, finalStopLoss: e.target.value})} 
+                                            className="w-full bg-surface border border-border rounded-lg px-2 py-1.5 text-xs text-textMain focus:outline-none focus:border-primary"
+                                            placeholder="-"
+                                        />
+                                        <button 
+                                            type="button"
+                                            onClick={() => setFormData(prev => ({...prev, finalStopLoss: currentData.stopLoss?.toString() || ''}))}
+                                            className="px-2 py-1 bg-surfaceHighlight border border-border/60 hover:border-primary/50 text-[10px] text-textMuted hover:text-textMain rounded transition-colors"
+                                            title={`Copy Entry SL: ${currentData.stopLoss || '-'}`}
+                                        >
+                                            same
+                                        </button>
+                                    </div>
+                                </div>
+                                <div>
+                                    <label className="block text-xs font-medium text-textMuted mb-1.5">Final TP</label>
+                                    <div className="flex gap-1.5">
+                                        <input 
+                                            type="number" 
+                                            step="any" 
+                                            value={formData.finalTakeProfit} 
+                                            onChange={(e) => setFormData({...formData, finalTakeProfit: e.target.value})} 
+                                            className="w-full bg-surface border border-border rounded-lg px-2 py-1.5 text-xs text-textMain focus:outline-none focus:border-primary"
+                                            placeholder="-"
+                                        />
+                                        <button 
+                                            type="button"
+                                            onClick={() => setFormData(prev => ({...prev, finalTakeProfit: currentData.takeProfit?.toString() || ''}))}
+                                            className="px-2 py-1 bg-surfaceHighlight border border-border/60 hover:border-primary/50 text-[10px] text-textMuted hover:text-textMain rounded transition-colors"
+                                            title={`Copy Entry TP: ${currentData.takeProfit || '-'}`}
+                                        >
+                                            same
+                                        </button>
+                                    </div>
                                 </div>
                             </div>
                         </div>

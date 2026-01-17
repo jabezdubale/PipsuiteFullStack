@@ -55,6 +55,8 @@ const parseTradeRow = (row) => {
     t.mainPnl = t.mainPnl ? parseFloat(t.mainPnl) : undefined;
     t.stopLoss = t.stopLoss ? parseFloat(t.stopLoss) : undefined;
     t.takeProfit = t.takeProfit ? parseFloat(t.takeProfit) : undefined;
+    t.finalStopLoss = t.finalStopLoss ? parseFloat(t.finalStopLoss) : undefined;
+    t.finalTakeProfit = t.finalTakeProfit ? parseFloat(t.finalTakeProfit) : undefined;
     t.leverage = t.leverage ? parseFloat(t.leverage) : undefined;
     t.riskPercentage = t.riskPercentage ? parseFloat(t.riskPercentage) : undefined;
     t.balance = t.balance ? parseFloat(t.balance) : undefined;
@@ -87,7 +89,8 @@ const mapTradeToParams = (t) => [
     safeJson(t.tags),
     safeJson(t.screenshots),
     safeJson(t.partials),
-    t.isDeleted || false, t.deletedAt, t.isBalanceUpdated || false
+    t.isDeleted || false, t.deletedAt, t.isBalanceUpdated || false,
+    sanitizeNumber(t.finalStopLoss), sanitizeNumber(t.finalTakeProfit)
 ];
 
 // --- Blob Cleanup Helper ---
@@ -238,7 +241,8 @@ const ensureSchema = async (db) => {
             "leverage DECIMAL(10, 2)", "risk_percentage DECIMAL(10, 2)",
             "notes TEXT", "emotional_notes TEXT",
             "tags JSONB DEFAULT '[]'", "screenshots JSONB DEFAULT '[]'", "partials JSONB DEFAULT '[]'",
-            "is_deleted BOOLEAN DEFAULT false", "deleted_at TIMESTAMP", "is_balance_updated BOOLEAN DEFAULT false"
+            "is_deleted BOOLEAN DEFAULT false", "deleted_at TIMESTAMP", "is_balance_updated BOOLEAN DEFAULT false",
+            "final_stop_loss DECIMAL(20, 5)", "final_take_profit DECIMAL(20, 5)"
         ];
 
         for (const colDef of columns) {
@@ -507,11 +511,12 @@ app.post('/api/trades', async (req, res) => {
                 entry_session, exit_session, order_type, setup,
                 leverage, risk_percentage, notes, emotional_notes,
                 tags, screenshots, partials,
-                is_deleted, deleted_at, is_balance_updated
+                is_deleted, deleted_at, is_balance_updated,
+                final_stop_loss, final_take_profit
             ) VALUES (
                 $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15,
                 $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27, $28,
-                $29, $30, $31, $32, $33, $34
+                $29, $30, $31, $32, $33, $34, $35, $36
             ) ON CONFLICT (id) DO UPDATE SET
                 symbol = EXCLUDED.symbol, type = EXCLUDED.type, status = EXCLUDED.status, outcome = EXCLUDED.outcome,
                 entry_price = EXCLUDED.entry_price, exit_price = EXCLUDED.exit_price, 
@@ -523,7 +528,8 @@ app.post('/api/trades', async (req, res) => {
                 order_type = EXCLUDED.order_type, setup = EXCLUDED.setup,
                 notes = EXCLUDED.notes, emotional_notes = EXCLUDED.emotional_notes,
                 tags = EXCLUDED.tags, screenshots = EXCLUDED.screenshots, partials = EXCLUDED.partials,
-                is_deleted = EXCLUDED.is_deleted, deleted_at = EXCLUDED.deleted_at, is_balance_updated = EXCLUDED.is_balance_updated
+                is_deleted = EXCLUDED.is_deleted, deleted_at = EXCLUDED.deleted_at, is_balance_updated = EXCLUDED.is_balance_updated,
+                final_stop_loss = EXCLUDED.final_stop_loss, final_take_profit = EXCLUDED.final_take_profit
         `;
         
         await client.query(queryText, mapTradeToParams(t));
@@ -693,13 +699,13 @@ app.post('/api/trades/batch', async (req, res) => {
                 id, account_id, symbol, type, status, outcome, entry_price, exit_price, stop_loss, take_profit, quantity,
                 fees, main_pnl, pnl, balance, created_at, entry_date, exit_date, entry_time, exit_time, entry_session,
                 exit_session, order_type, setup, leverage, risk_percentage, notes, emotional_notes, tags, screenshots,
-                partials, is_deleted, deleted_at, is_balance_updated
+                partials, is_deleted, deleted_at, is_balance_updated, final_stop_loss, final_take_profit
             )
             VALUES (
                 $1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,
                 $12,$13,$14,$15,$16,$17,$18,$19,$20,$21,
                 $22,$23,$24,$25,$26,$27,$28,$29,$30,
-                $31,$32,$33,$34
+                $31,$32,$33,$34,$35,$36
             )
             ON CONFLICT (id) DO UPDATE SET
                 account_id=EXCLUDED.account_id, symbol=EXCLUDED.symbol, type=EXCLUDED.type, status=EXCLUDED.status,
@@ -712,7 +718,8 @@ app.post('/api/trades/batch', async (req, res) => {
                 leverage=EXCLUDED.leverage, risk_percentage=EXCLUDED.risk_percentage, notes=EXCLUDED.notes,
                 emotional_notes=EXCLUDED.emotional_notes, tags=EXCLUDED.tags, screenshots=EXCLUDED.screenshots,
                 partials=EXCLUDED.partials, is_deleted=EXCLUDED.is_deleted, deleted_at=EXCLUDED.deleted_at,
-                is_balance_updated=EXCLUDED.is_balance_updated
+                is_balance_updated=EXCLUDED.is_balance_updated, final_stop_loss=EXCLUDED.final_stop_loss,
+                final_take_profit=EXCLUDED.final_take_profit
         `;
 
         for (const t of trades) {

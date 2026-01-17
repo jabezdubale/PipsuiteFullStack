@@ -10,9 +10,10 @@ interface CalendarViewProps {
   currentMonth: Date;
   setCurrentMonth: (date: Date) => void;
   onDayClick: (date: string, trades: Trade[]) => void;
+  onWeekClick?: (startDate: string, endDate: string, trades: Trade[]) => void;
 }
 
-const CalendarView: React.FC<CalendarViewProps> = ({ trades, currentMonth, setCurrentMonth, onDayClick }) => {
+const CalendarView: React.FC<CalendarViewProps> = ({ trades, currentMonth, setCurrentMonth, onDayClick, onWeekClick }) => {
   const [noteData, setNoteData] = useState<MonthlyNoteData>({ goals: '', notes: '', review: '' });
   const [isSavingNote, setIsSavingNote] = useState(false);
   const [isNoteLoaded, setIsNoteLoaded] = useState(false);
@@ -172,9 +173,11 @@ const CalendarView: React.FC<CalendarViewProps> = ({ trades, currentMonth, setCu
       let weeklyPnL = 0;
       let totalTrades = 0;
       let wins = 0;
+      let weekTrades: Trade[] = [];
 
       weekDays.forEach(d => {
           const tList = tradesByDate[d.dateStr] || [];
+          weekTrades.push(...tList);
           totalTrades += tList.length;
           weeklyPnL += tList.reduce((acc, t) => acc + t.pnl, 0);
           wins += tList.filter(t => t.status === TradeStatus.WIN).length;
@@ -189,8 +192,19 @@ const CalendarView: React.FC<CalendarViewProps> = ({ trades, currentMonth, setCu
           bgClass = 'bg-loss/20';
       }
 
+      const handleWeekClick = () => {
+          if (onWeekClick && weekDays.length > 0) {
+              const startDate = weekDays[0].dateStr;
+              const endDate = weekDays[weekDays.length - 1].dateStr;
+              onWeekClick(startDate, endDate, weekTrades);
+          }
+      };
+
       return (
-          <div className={`h-32 flex flex-col justify-center px-4 py-2 border-b border-border last:border-b-0 min-w-[160px] ${bgClass}`}>
+          <div 
+            className={`h-32 flex flex-col justify-center px-4 py-2 border-b border-border last:border-b-0 min-w-[160px] cursor-pointer hover:bg-surfaceHighlight/50 transition-colors ${bgClass}`}
+            onClick={handleWeekClick}
+          >
               <div className="flex justify-between items-center mb-1">
                   <span className="text-[10px] text-textMuted font-bold uppercase tracking-wider">Weekly P&L</span>
               </div>

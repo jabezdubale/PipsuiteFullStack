@@ -7,6 +7,7 @@ import CalendarView from './components/CalendarView';
 import TradeDetail from './components/TradeDetail';
 import TradeViewModal from './components/TradeViewModal';
 import DailyViewModal from './components/DailyViewModal';
+import WeeklyViewModal from './components/WeeklyViewModal';
 import AddAccountModal from './components/AddAccountModal';
 import DeleteConfirmationModal from './components/DeleteConfirmationModal';
 import DeleteAccountModal from './components/DeleteAccountModal';
@@ -40,8 +41,10 @@ function App() {
 
   // Calendar State
   const [currentCalendarMonth, setCurrentCalendarMonth] = useState(new Date());
-  // Daily View State
+  // Daily/Weekly View State
   const [selectedDailyDate, setSelectedDailyDate] = useState<string | null>(null);
+  const [selectedWeek, setSelectedWeek] = useState<{ start: string; end: string } | null>(null);
+  const [selectedWeekTrades, setSelectedWeekTrades] = useState<Trade[]>([]);
 
   // Modal States
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
@@ -977,6 +980,10 @@ function App() {
                 onDayClick={(dateStr) => {
                     setSelectedDailyDate(dateStr);
                 }}
+                onWeekClick={(start, end, trades) => {
+                    setSelectedWeek({ start, end });
+                    setSelectedWeekTrades(trades);
+                }}
             />
         );
       case 'journal':
@@ -1150,6 +1157,16 @@ function App() {
             date={selectedDailyDate}
             trades={selectedDailyTrades}
             onClose={() => setSelectedDailyDate(null)}
+            onTradeClick={navigateToTrade}
+          />
+      )}
+
+      {selectedWeek && (
+          <WeeklyViewModal 
+            startDate={selectedWeek.start}
+            endDate={selectedWeek.end}
+            trades={selectedWeekTrades}
+            onClose={() => setSelectedWeek(null)}
             onTradeClick={navigateToTrade}
           />
       )}

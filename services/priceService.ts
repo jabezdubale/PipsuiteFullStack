@@ -18,6 +18,8 @@ export interface PriceResult {
   price: number;
   source?: string;
   sourceUrl?: string;
+  timestamp?: number;
+  raw?: any;
 }
 
 export const fetchCurrentPrice = async (symbol: string, apiKey: string): Promise<PriceResult | null> => {
@@ -62,11 +64,14 @@ export const fetchCurrentPrice = async (symbol: string, apiKey: string): Promise
         return null;
     }
 
-    // Success response: { "price": "2740.50" }
+    // Success response for /price endpoint: { "price": "2740.50" }
+    // We explicitly check for 'price' as requested.
     if (data.price) {
         return {
             price: parseFloat(data.price),
-            source: 'Twelve Data'
+            source: 'Twelve Data',
+            timestamp: Date.now(), // /price endpoint doesn't return timestamp, so we assume 'now'
+            raw: data
         };
     }
 

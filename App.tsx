@@ -58,6 +58,7 @@ function App() {
   // Delete Confirmation State
   const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
   const [tradesToDelete, setTradesToDelete] = useState<string[]>([]);
+  const [deleteModeOverride, setDeleteModeOverride] = useState<'soft' | 'permanent' | null>(null);
   const [accountToDelete, setAccountToDelete] = useState<Account | null>(null);
 
   // Theme State
@@ -502,9 +503,9 @@ function App() {
       if (tradesToDelete.length === 0) return;
 
       try {
-          const isPermanentDelete = activeTab === 'trash';
+          const mode = deleteModeOverride ?? (activeTab === 'trash' ? 'permanent' : 'soft');
 
-          if (isPermanentDelete) {
+          if (mode === 'permanent') {
               await deleteTrades(tradesToDelete);
               setTrades(prev => prev.filter(t => !tradesToDelete.includes(t.id)));
           } else {
@@ -536,26 +537,13 @@ function App() {
       } finally {
           setIsDeleteModalOpen(false);
           setTradesToDelete([]);
+          setDeleteModeOverride(null);
       }
   };
 
-  const handleTrashTradesFromModal = async (ids: string[]) => {
-      try {
-          const updatedTrades = await trashTrades(ids, selectedAccountId);
-          // Merge updates
-          setTrades(prev => prev.map(t => {
-              const updated = updatedTrades.find(ut => ut.id === t.id);
-              return updated ? updated : t;
-          }));
-          
-          if (currentUser) {
-              const freshAccounts = await getAccounts(currentUser.id);
-              setAccounts(freshAccounts);
-          }
-      } catch (e) {
-          console.error(e);
-          alert("Failed to delete trades.");
-      }
+  const handleTrashTradesFromModal = (ids: string[]) => {
+      setDeleteModeOverride('soft');
+      handleRequestDelete(ids);
   };
 
   const handleRestoreTrades = async (ids: string[]) => {
@@ -1241,8 +1229,8 @@ function App() {
           count={tradesToDelete.length}
           tradeSymbol={tradesToDelete.length === 1 ? trades.find(t => t.id === tradesToDelete[0])?.symbol : undefined}
           onConfirm={executeDelete}
-          onCancel={() => setIsDeleteModalOpen(false)}
-          mode={activeTab === 'trash' ? 'permanent' : 'soft'}
+          onCancel={() => { setIsDeleteModalOpen(false); setDeleteModeOverride(null); }}
+          mode={deleteModeOverride ?? (activeTab === 'trash' ? 'permanent' : 'soft')}
       />
 
       {accountToDelete && (

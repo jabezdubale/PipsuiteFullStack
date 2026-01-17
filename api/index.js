@@ -3,7 +3,7 @@ require('dotenv').config();
 const express = require('express');
 const cors = require('cors');
 const { Pool } = require('pg');
-const { put } = require('@vercel/blob');
+const { put, del } = require('@vercel/blob');
 
 const app = express();
 const PORT = 3001;
@@ -89,6 +89,64 @@ const mapTradeToParams = (t) => [
     safeJson(t.partials),
     t.isDeleted || false, t.deletedAt, t.isBalanceUpdated || false
 ];
+
+// --- Blob Cleanup Helper ---
+const deleteBlobImages = async (urls) => {
+    if (!urls || !Array.isArray(urls) || urls.length === 0) return;
+    
+    // Filter for valid non-empty string URLs and de-dupe
+    const validUrls = [...new Set(urls.filter(u => typeof u === 'string' && u.trim().length > 0))];
+    
+    if (validUrls.length === 0) return;
+
+    try {
+        await del(validUrls, { token: process.env.BLOB_READ_WRITE_TOKEN });
+        console.log(`[Blob] Successfully deleted ${validUrls.length} images.`);
+    } catch (e) {
+        console.error("[Blob] Failed to delete images:", e.message);
+        // Continue execution, do not throw
+    }
+};
+
+// --- Purge Logic ---
+let lastPurgeCheck = 0;
+const PURGE_INTERVAL = 24 * 60 * 60 * 1000; // 24 hours
+
+const purgeOldTrashedTrades = async (db) => {
+    try {
+        // Find trades trashed more than 30 days ago
+        // Limit to 100 to prevent long-running queries in a single request
+        const result = await db.query(
+            "SELECT id, screenshots FROM trades WHERE is_deleted = true AND deleted_at < NOW() - INTERVAL '30 days' LIMIT 100"
+        );
+
+        if (result.rows.length === 0) return;
+
+        const idsToDelete = [];
+        let urlsToDelete = [];
+
+        for (const row of result.rows) {
+            idsToDelete.push(row.id);
+            if (Array.isArray(row.screenshots)) {
+                urlsToDelete = urlsToDelete.concat(row.screenshots);
+            }
+        }
+
+        // 1. Delete associated blobs (Best effort)
+        if (urlsToDelete.length > 0) {
+            await deleteBlobImages(urlsToDelete);
+        }
+
+        // 2. Permanently delete from DB
+        if (idsToDelete.length > 0) {
+            await db.query('DELETE FROM trades WHERE id = ANY($1)', [idsToDelete]);
+            console.log(`[Purge] Permanently deleted ${idsToDelete.length} old trades.`);
+        }
+
+    } catch (e) {
+        console.error("[Purge] Error during opportunistic purge:", e);
+    }
+};
 
 // --- Middleware ---
 app.use(async (req, res, next) => {
@@ -392,6 +450,15 @@ app.delete('/api/accounts/:id', async (req, res) => {
 // TRADES
 app.get('/api/trades', async (req, res) => {
     const { accountId, userId } = req.query;
+
+    // Opportunistic Purge of Old Trash (Run once every 24h)
+    const now = Date.now();
+    if (now - lastPurgeCheck > PURGE_INTERVAL) {
+        lastPurgeCheck = now;
+        // Run without awaiting to keep response fast, but handle error inside function
+        purgeOldTrashedTrades(req.db); 
+    }
+
     try {
         let query = 'SELECT * FROM trades';
         const params = [];
@@ -608,7 +675,10 @@ app.post('/api/trades/restore', async (req, res) => {
     }
 });
 
+// Batch Permanent Delete
 app.post('/api/trades/batch', async (req, res) => {
+    // Legacy route for saveTrades batch logic (upsert)
+    // Renamed because previous implementation used this URL for saving
     const { trades } = req.body;
     if (!trades || !Array.isArray(trades) || trades.length === 0) {
         return res.status(400).json({ error: 'Invalid data format.' });
@@ -668,6 +738,7 @@ app.post('/api/trades/batch', async (req, res) => {
     }
 });
 
+// Permanent Delete (Batch)
 app.delete('/api/trades/batch', async (req, res) => {
     const { ids } = req.body;
     if (!ids || !Array.isArray(ids) || ids.length === 0) {
@@ -675,6 +746,19 @@ app.delete('/api/trades/batch', async (req, res) => {
     }
 
     try {
+        // 1. Fetch images to delete
+        const blobRes = await req.db.query('SELECT screenshots FROM trades WHERE id = ANY($1)', [ids]);
+        let urls = [];
+        blobRes.rows.forEach(row => {
+            if (Array.isArray(row.screenshots)) urls = urls.concat(row.screenshots);
+        });
+        
+        // 2. Delete blobs (best effort)
+        if (urls.length > 0) {
+            await deleteBlobImages(urls);
+        }
+
+        // 3. Delete from DB
         const result = await req.db.query('DELETE FROM trades WHERE id = ANY($1)', [ids]);
         res.json({ success: true, deletedCount: result.rowCount || 0 });
     } catch (err) {
@@ -683,9 +767,20 @@ app.delete('/api/trades/batch', async (req, res) => {
     }
 });
 
+// Permanent Delete (Single)
 app.delete('/api/trades/:id', async (req, res) => {
     const { id } = req.params;
     try {
+        // 1. Fetch images
+        const blobRes = await req.db.query('SELECT screenshots FROM trades WHERE id = $1', [id]);
+        if (blobRes.rows.length > 0) {
+             const screenshots = blobRes.rows[0].screenshots;
+             if (Array.isArray(screenshots) && screenshots.length > 0) {
+                 await deleteBlobImages(screenshots);
+             }
+        }
+
+        // 2. Delete from DB
         const result = await req.db.query('DELETE FROM trades WHERE id = $1', [id]);
         res.json({ success: true, id, deleted: (result.rowCount || 0) > 0 });
     } catch (err) {

@@ -284,11 +284,14 @@ const TradeDetail: React.FC<TradeDetailProps> = ({ trade, accounts, tagGroups, s
   // Paste Listener
   useEffect(() => {
     const handlePaste = async (e: ClipboardEvent) => {
+      if (isCloseModalOpen) return; // Prevent double handling if modal is open
+
       const items = e.clipboardData?.items;
       if (!items) return;
 
       for (let i = 0; i < items.length; i++) {
         if (items[i].type.indexOf("image") !== -1) {
+          e.preventDefault(); // Stop default browser paste behavior
           const blob = items[i].getAsFile();
           if (blob) {
              try {
@@ -310,6 +313,7 @@ const TradeDetail: React.FC<TradeDetailProps> = ({ trade, accounts, tagGroups, s
              } finally {
                  setIsUploading(false);
              }
+             return; // Stop processing after first image
           }
         }
       }
@@ -319,7 +323,7 @@ const TradeDetail: React.FC<TradeDetailProps> = ({ trade, accounts, tagGroups, s
     return () => {
       window.removeEventListener("paste", handlePaste);
     };
-  }, []);
+  }, [isCloseModalOpen]);
 
   const handlePasteClick = async () => {
       try {

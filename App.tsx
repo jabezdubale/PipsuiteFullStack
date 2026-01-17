@@ -239,6 +239,7 @@ function App() {
 
       for (let i = 0; i < items.length; i++) {
         if (items[i].type.indexOf("image") !== -1) {
+          e.preventDefault(); // Stop default browser paste behavior
           const blob = items[i].getAsFile();
           if (blob) {
             try {
@@ -263,6 +264,7 @@ function App() {
             } finally {
                 setIsUploading(false);
             }
+            return; // Stop processing after first image
           }
         }
       }

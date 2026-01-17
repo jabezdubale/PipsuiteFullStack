@@ -116,12 +116,14 @@ const CloseTradeModal: React.FC<CloseTradeModalProps> = ({ currentData, tagGroup
 
       for (let i = 0; i < items.length; i++) {
         if (items[i].type.indexOf("image") !== -1) {
+          e.preventDefault(); // Stop default browser paste behavior
           const blob = items[i].getAsFile();
           if (blob) {
              try {
                  setIsUploading(true);
                  const base64 = await compressImage(blob);
-                 const url = await uploadImage("pasted.jpg", base64);
+                 const uniqueName = `pasted_${Date.now()}_${Math.random().toString(36).slice(2)}.jpg`;
+                 const url = await uploadImage(uniqueName, base64);
                  setFormData(prev => {
                     try {
                       return { ...prev, screenshots: addScreenshot(prev.screenshots || [], url) };
@@ -136,6 +138,7 @@ const CloseTradeModal: React.FC<CloseTradeModalProps> = ({ currentData, tagGroup
              } finally {
                  setIsUploading(false);
              }
+             return; // Stop processing after first image
           }
         }
       }
@@ -283,7 +286,8 @@ const CloseTradeModal: React.FC<CloseTradeModalProps> = ({ currentData, tagGroup
                   setIsUploading(true);
                   const blob = await item.getType(imageType);
                   const base64 = await compressImage(blob);
-                  const url = await uploadImage("pasted.jpg", base64);
+                  const uniqueName = `pasted_${Date.now()}_${Math.random().toString(36).slice(2)}.jpg`;
+                  const url = await uploadImage(uniqueName, base64);
                   setFormData(prev => {
                     try {
                       return { ...prev, screenshots: addScreenshot(prev.screenshots || [], url) };

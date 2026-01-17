@@ -1231,6 +1231,7 @@ function App() {
           tradeSymbol={tradesToDelete.length === 1 ? trades.find(t => t.id === tradesToDelete[0])?.symbol : undefined}
           onConfirm={executeDelete}
           onCancel={() => setIsDeleteModalOpen(false)}
+          mode={activeTab === 'trash' ? 'permanent' : 'soft'}
       />
 
       {accountToDelete && (

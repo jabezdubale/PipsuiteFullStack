@@ -8,10 +8,27 @@ interface DeleteConfirmationModalProps {
   tradeSymbol?: string; // If count is 1
   onConfirm: () => void;
   onCancel: () => void;
+  mode: 'soft' | 'permanent';
 }
 
-const DeleteConfirmationModal: React.FC<DeleteConfirmationModalProps> = ({ isOpen, count, tradeSymbol, onConfirm, onCancel }) => {
+const DeleteConfirmationModal: React.FC<DeleteConfirmationModalProps> = ({ isOpen, count, tradeSymbol, onConfirm, onCancel, mode }) => {
   if (!isOpen) return null;
+
+  const isSoft = mode === 'soft';
+  
+  const title = isSoft 
+    ? (count === 1 ? "Move Trade to Trash?" : "Move Trades to Trash?")
+    : (count === 1 ? "Delete Trade Forever?" : "Delete Trades Forever?");
+
+  const mainMessage = count === 1 
+    ? `Are you sure you want to ${isSoft ? 'move' : 'delete'} the ${tradeSymbol || 'selected'} trade${isSoft ? ' to trash' : ''}?` 
+    : `Are you sure you want to ${isSoft ? 'move' : 'delete'} ${count} trades${isSoft ? ' to trash' : ''}?`;
+
+  const subMessage = isSoft
+    ? "Trades in the trash can be restored later. Any balance impact will be reversed."
+    : "This action cannot be undone. All associated data and screenshots will be permanently removed.";
+
+  const buttonText = isSoft ? "Move to Trash" : "Delete Forever";
 
   return (
     <div 
@@ -27,15 +44,12 @@ const DeleteConfirmationModal: React.FC<DeleteConfirmationModalProps> = ({ isOpe
                 <AlertTriangle size={24} />
             </div>
             
-            <h3 className="text-lg font-bold text-textMain mb-2">Delete Trade{count > 1 ? 's' : ''}?</h3>
+            <h3 className="text-lg font-bold text-textMain mb-2">{title}</h3>
             
             <p className="text-sm text-textMuted mb-6">
-                {count === 1 
-                  ? `Are you sure you want to delete the ${tradeSymbol || 'selected'} trade?` 
-                  : `Are you sure you want to delete ${count} trades?`
-                }
+                {mainMessage}
                 <br/>
-                <span className="text-xs opacity-70 mt-2 block">This action cannot be undone and will reverse any balance changes.</span>
+                <span className="text-xs opacity-70 mt-2 block">{subMessage}</span>
             </p>
 
             <div className="flex gap-3 justify-center">
@@ -49,7 +63,7 @@ const DeleteConfirmationModal: React.FC<DeleteConfirmationModalProps> = ({ isOpe
                     onClick={onConfirm}
                     className="px-4 py-2 text-sm font-bold text-white bg-loss hover:bg-red-600 rounded-lg shadow-lg shadow-red-500/20 transition-colors flex items-center gap-2"
                 >
-                    <Trash2 size={16} /> Delete
+                    <Trash2 size={16} /> {buttonText}
                 </button>
             </div>
         </div>

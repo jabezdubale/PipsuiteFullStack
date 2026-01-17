@@ -395,6 +395,11 @@ const TradeList: React.FC<TradeListProps> = ({ trades, selectedAccountId, onTrad
                 
                 if (val === null || val === undefined) return '';
                 
+                // Fix: Ensure arrays (like tags) export symmetrically with import using pipe
+                if (Array.isArray(val)) {
+                    val = val.join('|');
+                }
+
                 const strVal = String(val);
                 if (strVal.includes(',') || strVal.includes('"') || strVal.includes('\n')) {
                     return `"${strVal.replace(/"/g, '""')}"`;
@@ -503,6 +508,33 @@ const TradeList: React.FC<TradeListProps> = ({ trades, selectedAccountId, onTrad
             tags: getIndex(['tags'])
           };
 
+          // Helpers for sanitization
+          const normalizeType = (v: string | undefined): TradeType => {
+              const s = (v || '').toUpperCase();
+              if (s.includes('SHORT') || s.includes('SELL')) return TradeType.SHORT;
+              return TradeType.LONG;
+          };
+
+          const normalizeOrderType = (v: string | undefined): OrderType => {
+              const s = (v || '').toUpperCase();
+              if (s.includes('LIMIT')) {
+                  if (s.includes('BUY')) return OrderType.BUY_LIMIT;
+                  if (s.includes('SELL')) return OrderType.SELL_LIMIT;
+              }
+              if (s.includes('STOP')) {
+                  if (s.includes('BUY')) return OrderType.BUY_STOP;
+                  if (s.includes('SELL')) return OrderType.SELL_STOP;
+              }
+              return OrderType.MARKET;
+          };
+
+          const parseTags = (v: string | undefined): string[] => {
+              if (!v) return [];
+              // Handle both pipe (app standard) and comma (user standard)
+              const delimiter = v.includes('|') ? '|' : ',';
+              return v.split(delimiter).map(t => t.trim()).filter(Boolean);
+          };
+
           const newTrades: Trade[] = [];
           
           for (let i = 1; i < rows.length; i++) {
@@ -567,7 +599,7 @@ const TradeList: React.FC<TradeListProps> = ({ trades, selectedAccountId, onTrad
                   id: generateId('imported'),
                   accountId: selectedAccountId, // Ensure valid account ID
                   symbol: getValue(idx.symbol) || 'UNKNOWN',
-                  type: (getValue(idx.type) as TradeType) || TradeType.LONG,
+                  type: normalizeType(getValue(idx.type)),
                   createdAt: createdAt,
                   entryPrice: parseFloat(getValue(idx.entryPrice) || '0') || 0,
                   entryDate: entryDate,
@@ -580,14 +612,14 @@ const TradeList: React.FC<TradeListProps> = ({ trades, selectedAccountId, onTrad
                   quantity: parseFloat(getValue(idx.quantity) || '0') || 0,
                   outcome: outcome,
                   status: status,
-                  orderType: (getValue(idx.orderType) as OrderType) || OrderType.MARKET,
+                  orderType: normalizeOrderType(getValue(idx.orderType)),
                   setup: getValue(idx.setup) || '',
                   mainPnl: getValue(idx.mainPnl) ? parseFloat(getValue(idx.mainPnl)!) : undefined,
                   fees: parseFloat(getValue(idx.fees) || '0') || 0,
                   pnl: parseFloat(getValue(idx.pnl) || '0') || 0,
                   notes: getValue(idx.notes) || '',
                   emotionalNotes: getValue(idx.emotionalNotes) || '',
-                  tags: getValue(idx.tags) ? getValue(idx.tags)!.split('|') : [],
+                  tags: parseTags(getValue(idx.tags)),
                   screenshots: [], 
                   partials: [] 
               };

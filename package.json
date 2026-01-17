@@ -1,3 +1,4 @@
+
 {
   "name": "pipsuite",
   "version": "1.0.0",
@@ -7,7 +8,8 @@
     "start": "node api/index.js",
     "dev": "concurrently \"npm run server\" \"vite\"",
     "server": "node api/index.js",
-    "build": "vite build",
+    "typecheck": "tsc --noEmit",
+    "build": "npm run typecheck && vite build",
     "lint": "eslint . --ext ts,tsx --report-unused-disable-directives --max-warnings 0",
     "preview": "vite preview"
   },

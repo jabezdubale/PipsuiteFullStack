@@ -288,7 +288,8 @@ const TradeDetail: React.FC<TradeDetailProps> = ({ trade, accounts, tagGroups, s
              try {
                  setIsUploading(true);
                  const base64 = await compressImage(blob);
-                 const url = await uploadImage("pasted.jpg", base64);
+                 const uniqueName = `pasted_${Date.now()}_${Math.random().toString(36).slice(2)}.jpg`;
+                 const url = await uploadImage(uniqueName, base64);
                  setFormData((prev: any) => {
                     try {
                         return { ...prev, screenshots: addScreenshot(prev.screenshots || [], url) };
@@ -323,7 +324,8 @@ const TradeDetail: React.FC<TradeDetailProps> = ({ trade, accounts, tagGroups, s
                   setIsUploading(true);
                   const blob = await item.getType(imageType);
                   const base64 = await compressImage(blob);
-                  const url = await uploadImage("pasted.jpg", base64);
+                  const uniqueName = `pasted_${Date.now()}_${Math.random().toString(36).slice(2)}.jpg`;
+                  const url = await uploadImage(uniqueName, base64);
                   setFormData((prev: any) => {
                     try {
                         return { ...prev, screenshots: addScreenshot(prev.screenshots || [], url) };
@@ -545,7 +547,8 @@ const TradeDetail: React.FC<TradeDetailProps> = ({ trade, accounts, tagGroups, s
       try {
           setIsUploading(true);
           const base64 = await compressImage(file);
-          const url = await uploadImage(file.name, base64);
+          const uniqueName = `pasted_${Date.now()}_${Math.random().toString(36).slice(2)}.jpg`;
+          const url = await uploadImage(uniqueName, base64);
           setFormData((prev: any) => {
             try {
                 return { ...prev, screenshots: addScreenshot(prev.screenshots || [], url) };

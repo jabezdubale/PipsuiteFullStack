@@ -241,8 +241,9 @@ function App() {
                 setIsUploading(true);
                 // Compress before upload
                 const base64 = await compressImage(blob);
-                // Upload to Vercel Blob
-                const url = await uploadImage('pasted_image.jpg', base64);
+                // Upload to Vercel Blob with unique name
+                const uniqueName = `pasted_${Date.now()}_${Math.random().toString(36).slice(2)}.jpg`;
+                const url = await uploadImage(uniqueName, base64);
                 
                 setNewTradeForm((prev: any) => {
                     try {
@@ -651,7 +652,8 @@ function App() {
       try {
           setIsUploading(true);
           const base64String = await compressImage(file);
-          const url = await uploadImage(file.name, base64String);
+          const uniqueName = `pasted_${Date.now()}_${Math.random().toString(36).slice(2)}.jpg`;
+          const url = await uploadImage(uniqueName, base64String);
           setNewTradeForm((prev: any) => {
               try {
                   return { ...prev, screenshots: addScreenshot(prev.screenshots || [], url) };

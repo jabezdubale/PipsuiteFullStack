@@ -24,7 +24,8 @@ const TradeDetail: React.FC<TradeDetailProps> = ({ trade, onSave, onDelete, onBa
   const formDataRef = useRef<Trade>(trade);
   const financialsRef = useRef<{balanceChange: number}>({ balanceChange: 0 }); // Track balance impact if any
   const saveTimeoutRef = useRef<NodeJS.Timeout | null>(null);
-  const isManualSave = useRef(false);
+  const isFirstRender = useRef(true);
+  const isDeletedRef = useRef(false); // Guard to prevent saving on unmount if deleted
 
   // Sync state with prop if trade changes (e.g. initial load or external update)
   useEffect(() => {
@@ -32,43 +33,63 @@ const TradeDetail: React.FC<TradeDetailProps> = ({ trade, onSave, onDelete, onBa
     formDataRef.current = trade;
   }, [trade.id]);
 
-  // Cleanup timeout on unmount
-  useEffect(() => {
-      return () => {
-          if (saveTimeoutRef.current) clearTimeout(saveTimeoutRef.current);
-      };
-  }, []);
-
   const performSave = (data: Trade, financials: { balanceChange: number } = { balanceChange: 0 }) => {
       onSave(data, false, financials.balanceChange);
   };
 
-  // Helper to update form data and trigger auto-save debounce
+  // Autosave Effect
+  useEffect(() => {
+    if (isFirstRender.current) {
+        isFirstRender.current = false;
+        return;
+    }
+
+    if (saveTimeoutRef.current) {
+        clearTimeout(saveTimeoutRef.current);
+    }
+
+    saveTimeoutRef.current = setTimeout(() => {
+        performSave(formData, financialsRef.current);
+    }, 1000);
+
+    // Cleanup should ONLY cancel the pending timeout (do NOT save here)
+    return () => {
+        if (saveTimeoutRef.current) {
+            clearTimeout(saveTimeoutRef.current);
+        }
+    };
+  }, [formData]);
+
+  // Unmount-only flush (Force Save on Close)
+  useEffect(() => {
+    return () => {
+        if (saveTimeoutRef.current) {
+            clearTimeout(saveTimeoutRef.current);
+        }
+        // Flush the latest refs (avoids stale closure), unless deleted
+        if (!isDeletedRef.current) {
+            performSave(formDataRef.current, financialsRef.current);
+        }
+    };
+  }, []);
+
+  // Helper to update form data (just state update)
   const updateField = (updates: Partial<Trade>) => {
       const newData = { ...formData, ...updates };
       setFormData(newData);
       formDataRef.current = newData;
-      
-      // Debounce save (2 seconds)
-      if (saveTimeoutRef.current) clearTimeout(saveTimeoutRef.current);
-      saveTimeoutRef.current = setTimeout(() => {
-          if (!isManualSave.current) {
-              performSave(newData); 
-          }
-      }, 2000);
   };
 
-  // Safe manual back to list (ensures flush of any pending changes)
+  // Safe manual back to list
   const handleBack = () => {
-      if (saveTimeoutRef.current) clearTimeout(saveTimeoutRef.current);
-      isManualSave.current = true;
-      performSave(formDataRef.current, financialsRef.current);
+      // Unmount effect will handle the save
       onBack();
   };
 
   const handleDelete = () => {
       if (window.confirm('Are you sure you want to delete this trade?')) {
           if (saveTimeoutRef.current) clearTimeout(saveTimeoutRef.current);
+          isDeletedRef.current = true; // Prevent unmount save
           onDelete(trade.id);
           onBack(); 
       }
@@ -76,11 +97,8 @@ const TradeDetail: React.FC<TradeDetailProps> = ({ trade, onSave, onDelete, onBa
 
   const handleManualSave = () => {
       if (saveTimeoutRef.current) clearTimeout(saveTimeoutRef.current);
-      isManualSave.current = true;
-      performSave(formDataRef.current, financialsRef.current);
-      // Optional: Visual feedback or close
+      performSave(formData, financialsRef.current);
       alert("Trade Saved!");
-      isManualSave.current = false; // Reset for future edits if we stay on page
   };
 
   // Image handling

@@ -1,18 +1,20 @@
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Trade, TradeType, TradeStatus, TradeOutcome } from '../types';
-import { X, ArrowRight, GripVertical, TrendingUp, TrendingDown, Slash, Activity } from 'lucide-react';
+import { X, ArrowRight, GripVertical, TrendingUp, TrendingDown, Slash, Activity, MousePointer2, CheckSquare, Trash2, Download, Check } from 'lucide-react';
 
 interface DailyViewModalProps {
   date: string;
   trades: Trade[];
   onClose: () => void;
   onTradeClick: (trade: Trade) => void;
+  onTrashTrades: (ids: string[]) => void;
+  onExportTrades: (trades: Trade[]) => void;
 }
 
 type ColumnKey = 'symbol' | 'type' | 'quantity' | 'rr' | 'outcome' | 'pnl';
 
-const DailyViewModal: React.FC<DailyViewModalProps> = ({ date, trades, onClose, onTradeClick }) => {
+const DailyViewModal: React.FC<DailyViewModalProps> = ({ date, trades, onClose, onTradeClick, onTrashTrades, onExportTrades }) => {
   // Calculate daily stats
   const dailyPnL = trades.reduce((acc, t) => acc + t.pnl, 0);
   const winRate = trades.length > 0 
@@ -22,6 +24,46 @@ const DailyViewModal: React.FC<DailyViewModalProps> = ({ date, trades, onClose, 
   // Column State for Drag & Drop
   const [columns, setColumns] = useState<ColumnKey[]>(['symbol', 'type', 'quantity', 'rr', 'outcome', 'pnl']);
   const [draggedColumn, setDraggedColumn] = useState<ColumnKey | null>(null);
+
+  // Selection State
+  const [isSelectionMode, setIsSelectionMode] = useState(false);
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+
+  useEffect(() => {
+      if (!isSelectionMode) setSelectedIds(new Set());
+  }, [isSelectionMode]);
+
+  const toggleSelectAll = () => {
+      if (selectedIds.size === trades.length) {
+          setSelectedIds(new Set());
+      } else {
+          setSelectedIds(new Set(trades.map(t => t.id)));
+      }
+  };
+
+  const handleRowClick = (trade: Trade) => {
+      if (isSelectionMode) {
+          const newSelected = new Set(selectedIds);
+          if (newSelected.has(trade.id)) newSelected.delete(trade.id);
+          else newSelected.add(trade.id);
+          setSelectedIds(newSelected);
+      } else {
+          onTradeClick(trade);
+      }
+  };
+
+  const handleBulkDelete = () => {
+      if (selectedIds.size === 0) return;
+      onTrashTrades(Array.from(selectedIds));
+      setSelectedIds(new Set());
+      setIsSelectionMode(false);
+  };
+
+  const handleBulkExport = () => {
+      if (selectedIds.size === 0) return;
+      const selectedTrades = trades.filter(t => selectedIds.has(t.id));
+      onExportTrades(selectedTrades);
+  };
 
   const COLUMN_LABELS: Record<ColumnKey, string> = {
     symbol: 'Asset Pair',
@@ -36,7 +78,6 @@ const DailyViewModal: React.FC<DailyViewModalProps> = ({ date, trades, onClose, 
   const handleDragStart = (e: React.DragEvent, col: ColumnKey) => {
     setDraggedColumn(col);
     e.dataTransfer.effectAllowed = 'move';
-    // Create a ghost image if needed, or default browser behavior
   };
 
   const handleDragOver = (e: React.DragEvent) => {
@@ -148,9 +189,56 @@ const DailyViewModal: React.FC<DailyViewModalProps> = ({ date, trades, onClose, 
               <span className="text-textMuted">Win Rate: {winRate.toFixed(0)}%</span>
             </div>
           </div>
-          <button onClick={onClose} className="p-2 bg-surface border border-border rounded-full hover:bg-surfaceHighlight transition-colors text-textMuted hover:text-textMain">
-            <X size={18} />
-          </button>
+          
+          {/* Actions */}
+          <div className="flex items-center gap-2">
+              {isSelectionMode ? (
+                  <div className="flex items-center gap-2 bg-surfaceHighlight p-1 rounded-lg border border-primary/30 animate-in fade-in slide-in-from-right-2">
+                      <button 
+                        onClick={toggleSelectAll}
+                        className="px-3 py-1.5 text-xs font-medium text-textMain hover:bg-surface rounded transition-colors flex items-center gap-1.5"
+                      >
+                          <CheckSquare size={14} /> All
+                      </button>
+                      <div className="h-4 w-px bg-border/50"></div>
+                      <button 
+                          onClick={handleBulkDelete}
+                          disabled={selectedIds.size === 0}
+                          className="px-3 py-1.5 text-xs font-medium text-loss hover:bg-loss/10 rounded transition-colors flex items-center gap-1.5 disabled:opacity-50"
+                      >
+                          <Trash2 size={14} /> Delete
+                      </button>
+                      <button 
+                          onClick={handleBulkExport}
+                          disabled={selectedIds.size === 0}
+                          className="px-3 py-1.5 text-xs font-medium text-textMain hover:bg-surface rounded transition-colors flex items-center gap-1.5 disabled:opacity-50"
+                      >
+                          <Download size={14} /> Export
+                      </button>
+                      <div className="h-4 w-px bg-border/50"></div>
+                      <button 
+                          onClick={() => setIsSelectionMode(false)}
+                          className="p-1.5 text-textMuted hover:text-textMain hover:bg-surface rounded transition-colors"
+                          title="Exit Selection"
+                      >
+                          <X size={14} />
+                      </button>
+                  </div>
+              ) : (
+                  <>
+                    <button 
+                        onClick={() => setIsSelectionMode(true)}
+                        className="bg-surface border border-border px-3 py-2 rounded-lg text-textMuted hover:text-primary flex items-center gap-2 text-xs transition-colors"
+                        title="Select Trades"
+                    >
+                        <MousePointer2 size={14} /> Select
+                    </button>
+                    <button onClick={onClose} className="p-2 bg-surface border border-border rounded-lg hover:bg-surfaceHighlight transition-colors text-textMuted hover:text-textMain">
+                        <X size={18} />
+                    </button>
+                  </>
+              )}
+          </div>
         </div>
 
         {/* Content */}
@@ -158,6 +246,11 @@ const DailyViewModal: React.FC<DailyViewModalProps> = ({ date, trades, onClose, 
           <table className="w-full text-left text-sm border-collapse">
             <thead className="bg-surfaceHighlight text-textMuted border-b border-border sticky top-0 z-10">
               <tr>
+                {isSelectionMode && (
+                    <th className="sticky left-0 top-0 z-50 w-[40px] px-4 py-3 bg-surfaceHighlight border-r border-border/50 text-center">
+                        <CheckSquare size={14} />
+                    </th>
+                )}
                 {columns.map(col => (
                     <th 
                         key={col} 
@@ -178,27 +271,39 @@ const DailyViewModal: React.FC<DailyViewModalProps> = ({ date, trades, onClose, 
               </tr>
             </thead>
             <tbody className="divide-y divide-border">
-              {trades.map((trade) => (
-                <tr 
-                  key={trade.id} 
-                  onClick={() => onTradeClick(trade)}
-                  className="hover:bg-surfaceHighlight/50 transition-colors cursor-pointer group"
-                >
-                  {columns.map(col => (
-                      <td key={col} className="p-4">
-                          {renderCell(trade, col)}
-                      </td>
-                  ))}
-                  <td className="p-4 text-center">
-                    <button className="text-primary hover:text-textMain transition-colors opacity-0 group-hover:opacity-100">
-                      <ArrowRight size={16} />
-                    </button>
-                  </td>
-                </tr>
-              ))}
+              {trades.map((trade) => {
+                const isSelected = selectedIds.has(trade.id);
+                return (
+                    <tr 
+                    key={trade.id} 
+                    onClick={() => handleRowClick(trade)}
+                    className={`transition-colors cursor-pointer group ${isSelected ? 'bg-primary/10 hover:bg-primary/20' : 'hover:bg-surfaceHighlight/50'}`}
+                    >
+                    {isSelectionMode && (
+                        <td className={`sticky left-0 z-30 px-4 py-3 border-r border-border/50 text-center transition-colors ${isSelected ? 'bg-primary/10 group-hover:bg-primary/20' : 'bg-surface group-hover:bg-surfaceHighlight'}`}>
+                            <div className={`w-4 h-4 rounded border flex items-center justify-center mx-auto transition-colors ${isSelected ? 'bg-primary border-primary text-white' : 'border-textMuted/50 bg-background'}`}>
+                                {isSelected && <Check size={10} strokeWidth={4} />}
+                            </div>
+                        </td>
+                    )}
+                    {columns.map(col => (
+                        <td key={col} className="p-4">
+                            {renderCell(trade, col)}
+                        </td>
+                    ))}
+                    <td className="p-4 text-center">
+                        {!isSelectionMode && (
+                            <button className="text-primary hover:text-textMain transition-colors opacity-0 group-hover:opacity-100">
+                                <ArrowRight size={16} />
+                            </button>
+                        )}
+                    </td>
+                    </tr>
+                );
+              })}
               {trades.length === 0 && (
                 <tr>
-                  <td colSpan={columns.length + 1} className="p-8 text-center text-textMuted">No trades recorded for this day.</td>
+                  <td colSpan={columns.length + (isSelectionMode ? 2 : 1)} className="p-8 text-center text-textMuted">No trades recorded for this day.</td>
                 </tr>
               )}
             </tbody>

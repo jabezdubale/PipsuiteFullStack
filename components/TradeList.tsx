@@ -5,6 +5,7 @@ import { Trash2, Settings, Eye, X, ChevronLeft, ChevronRight, Check, Download, U
 import { calculateAutoTags } from '../utils/autoTagLogic';
 import { generateId } from '../utils/idUtils';
 import { getSetting, saveSetting } from '../services/storageService';
+import { exportTradesToCSV } from '../utils/csvExport';
 
 interface TradeListProps {
   trades: Trade[];
@@ -380,53 +381,7 @@ const TradeList: React.FC<TradeListProps> = ({ trades, selectedAccountId, onTrad
         ? trades.filter(t => selectedIds.has(t.id)) 
         : filteredTrades;
 
-    if (dataToExport.length === 0) return;
-
-    const headers = ["Asset Pair", ...AVAILABLE_COLUMNS.map(c => c.label)];
-    const keys = ["symbol", ...AVAILABLE_COLUMNS.map(c => c.key)];
-    
-    const csvContent = [
-        headers.join(','),
-        ...dataToExport.map(row => {
-            return keys.map(k => {
-                let val: any;
-                // For numeric fields, try to get raw data for better CSV compatibility (no commas)
-                // This ensures re-importing works reliably without needing complex parsing logic
-                const numericKeys = ['entryPrice', 'exitPrice', 'stopLoss', 'takeProfit', 'finalStopLoss', 'finalTakeProfit', 'quantity', 'fees', 'mainPnl', 'pnl'];
-                
-                if (k === 'symbol') {
-                    val = row.symbol;
-                } else if (numericKeys.includes(k as string)) {
-                    // @ts-ignore
-                    val = row[k];
-                    if (val === undefined || val === null) val = '';
-                } else {
-                    val = getCellValue(row, k as ColumnKey);
-                }
-                
-                if (val === null || val === undefined) return '';
-                
-                // Fix: Ensure arrays (like tags) export symmetrically with import using pipe
-                if (Array.isArray(val)) {
-                    val = val.join('|');
-                }
-
-                const strVal = String(val);
-                if (strVal.includes(',') || strVal.includes('"') || strVal.includes('\n')) {
-                    return `"${strVal.replace(/"/g, '""')}"`;
-                }
-                return strVal;
-            }).join(',');
-        })
-    ].join('\n');
-
-    const blob = new Blob([csvContent], { type: 'text/csv' });
-    const url = window.URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `trades-${new Date().toISOString().split('T')[0]}.csv`;
-    a.click();
-    window.URL.revokeObjectURL(url);
+    exportTradesToCSV(dataToExport);
   };
 
   const handleImportCSV = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -926,6 +881,7 @@ const TradeList: React.FC<TradeListProps> = ({ trades, selectedAccountId, onTrad
       </div>
 
       <div className="bg-surface border border-border rounded-xl overflow-hidden shadow-sm flex flex-col">
+        {/* ... Table render logic remains same ... */}
         <div className={`overflow-auto transition-all duration-200 ${openFilterColumn ? 'min-h-[350px]' : ''}`} style={{ maxHeight: 'calc(100vh - 280px)' }}>
           <table className="min-w-full text-left text-sm border-collapse">
             <thead className="bg-surfaceHighlight text-textMuted border-b border-border">
@@ -961,6 +917,7 @@ const TradeList: React.FC<TradeListProps> = ({ trades, selectedAccountId, onTrad
           </table>
         </div>
         
+        {/* ... Pagination logic remains same ... */}
         <div className="p-3 border-t border-border bg-surface flex flex-col sm:flex-row justify-between items-center gap-4 text-xs shrink-0">
            <div className="flex items-center gap-4"><span className="text-textMuted hidden sm:inline">Showing {Math.min(startIndex + 1, filteredTrades.length)} - {Math.min(startIndex + itemsPerPage, filteredTrades.length)} of {filteredTrades.length} trades</span>
               <div className="flex items-center gap-2"><span className="text-textMuted">Rows:</span><input type="number" min="5" value={itemsPerPageInput} onChange={handleItemsPerPageChange} onBlur={applyItemsPerPage} onKeyDown={handleItemsPerPageKeyDown} className="w-12 bg-surfaceHighlight border border-border rounded px-1.5 py-1 text-center focus:outline-none focus:border-primary" /></div>

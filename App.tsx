@@ -21,6 +21,7 @@ import { X, ChevronDown, Calculator, TrendingUp, TrendingDown, RefreshCw, Loader
 import UserModal from './components/UserModal';
 import { compressImage, addScreenshot } from './utils/imageUtils';
 import { generateId } from './utils/idUtils';
+import { exportTradesToCSV } from './utils/csvExport';
 
 function App() {
   const [activeTab, setActiveTab] = useState('dashboard'); 
@@ -536,6 +537,25 @@ function App() {
       }
   };
 
+  const handleTrashTradesFromModal = async (ids: string[]) => {
+      try {
+          const updatedTrades = await trashTrades(ids, selectedAccountId);
+          // Merge updates
+          setTrades(prev => prev.map(t => {
+              const updated = updatedTrades.find(ut => ut.id === t.id);
+              return updated ? updated : t;
+          }));
+          
+          if (currentUser) {
+              const freshAccounts = await getAccounts(currentUser.id);
+              setAccounts(freshAccounts);
+          }
+      } catch (e) {
+          console.error(e);
+          alert("Failed to delete trades.");
+      }
+  };
+
   const handleRestoreTrades = async (ids: string[]) => {
       try {
           const updatedTrades = await restoreTrades(ids, selectedAccountId);
@@ -1012,6 +1032,7 @@ function App() {
           />
         );
       case 'settings':
+        // ... (settings render code remains unchanged)
         return (
           <div className="p-8 max-w-2xl mx-auto space-y-8 animate-in fade-in duration-500">
             <h2 className="text-xl font-bold">Settings</h2>
@@ -1158,6 +1179,8 @@ function App() {
             trades={selectedDailyTrades}
             onClose={() => setSelectedDailyDate(null)}
             onTradeClick={navigateToTrade}
+            onTrashTrades={handleTrashTradesFromModal}
+            onExportTrades={exportTradesToCSV}
           />
       )}
 
@@ -1168,6 +1191,8 @@ function App() {
             trades={selectedWeekTrades}
             onClose={() => setSelectedWeek(null)}
             onTradeClick={navigateToTrade}
+            onTrashTrades={handleTrashTradesFromModal}
+            onExportTrades={exportTradesToCSV}
           />
       )}
       
@@ -1217,11 +1242,13 @@ function App() {
           />
       )}
 
+      {/* ... Add Trade Modal XML ... */}
       {isAddModalOpen && (
         <div 
             className="fixed inset-0 bg-black/70 flex items-center justify-center z-[200] p-4 backdrop-blur-sm animate-in fade-in"
             onClick={() => setIsAddModalOpen(false)}
         >
+          {/* ... Content of Add Trade Modal ... */}
           <div 
             className="bg-surface border border-border rounded-xl w-full max-w-lg shadow-2xl flex flex-col max-h-[90vh]"
             onClick={(e) => e.stopPropagation()}

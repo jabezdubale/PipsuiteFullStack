@@ -14,6 +14,13 @@ export const extractTradeParamsFromImage = async (base64Image: string, apiKey: s
 
   const ai = new GoogleGenAI({ apiKey });
 
+  // Extract MIME type if present, default to png if raw base64 provided
+  let mimeType = "image/png";
+  const match = base64Image.match(/^data:(image\/[a-zA-Z+]+);base64,/);
+  if (match && match[1]) {
+    mimeType = match[1];
+  }
+
   // Remove the data URL prefix if present to get raw base64
   const cleanBase64 = base64Image.replace(/^data:image\/(png|jpeg|jpg|webp);base64,/, "");
 
@@ -33,7 +40,7 @@ export const extractTradeParamsFromImage = async (base64Image: string, apiKey: s
           },
           {
             inlineData: {
-              mimeType: "image/png",
+              mimeType: mimeType,
               data: cleanBase64
             }
           }

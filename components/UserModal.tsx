@@ -50,7 +50,7 @@ const UserModal: React.FC<UserModalProps> = ({ user, onSave, onClose }) => {
               const ai = new GoogleGenAI({ apiKey: formData.geminiApiKey });
               await ai.models.generateContent({
                   model: 'gemini-3-flash-preview',
-                  contents: 'Hello',
+                  contents: { parts: [{ text: 'Hello' }] },
               });
               geminiStatus = 'success';
           } catch (e) {

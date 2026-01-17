@@ -76,6 +76,13 @@ export const uploadImage = async (filename: string, base64Data: string): Promise
     return response.url;
 };
 
+export const deleteBlobImages = async (urls: string[]): Promise<{ success: boolean; deleted: number }> => {
+    return api<{ success: boolean; deleted: number }>('/blob/delete', {
+        method: 'POST',
+        body: JSON.stringify({ urls })
+    });
+};
+
 // --- Generic Settings (Theme, Columns, User Profile) ---
 
 export const getSetting = async <T>(key: string, defaultVal: T): Promise<T> => {

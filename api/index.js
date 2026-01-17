@@ -154,7 +154,7 @@ const purgeOldTrashedTrades = async (db) => {
 // --- Middleware ---
 app.use(async (req, res, next) => {
     // Skip DB check for upload route to allow it to function even if DB is connecting
-    if (req.path === '/api/upload') return next();
+    if (req.path === '/api/upload' || req.path === '/api/blob/delete') return next();
 
     const db = getDB();
     if (!db) {
@@ -279,6 +279,29 @@ app.post('/api/upload', async (req, res) => {
     } catch (err) {
         console.error("Blob Upload Error:", err);
         res.status(500).json({ error: "Upload failed: " + err.message });
+    }
+});
+
+// Delete Route for Vercel Blob
+app.post('/api/blob/delete', async (req, res) => {
+    const { urls } = req.body;
+    if (!urls || !Array.isArray(urls)) {
+        return res.status(400).json({ error: "Invalid payload. 'urls' must be an array." });
+    }
+
+    // Filter to only Vercel Blob URLs to prevent errors or misuse
+    const blobUrls = urls.filter(u => typeof u === 'string' && u.includes('vercel-storage.com'));
+
+    if (blobUrls.length === 0) {
+        return res.json({ success: true, deleted: 0 });
+    }
+
+    try {
+        await del(blobUrls, { token: process.env.BLOB_READ_WRITE_TOKEN });
+        res.json({ success: true, deleted: blobUrls.length });
+    } catch (err) {
+        console.error("Blob Deletion Error:", err);
+        res.status(500).json({ error: "Failed to delete blobs: " + err.message });
     }
 });
 

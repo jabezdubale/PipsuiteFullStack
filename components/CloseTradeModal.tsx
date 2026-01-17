@@ -6,7 +6,7 @@ import { getSessionForTime } from '../utils/sessionHelpers';
 import { calculateAutoTags } from '../utils/autoTagLogic';
 import { toLocalInputString } from '../utils/dateUtils';
 import { compressImage, addScreenshot } from '../utils/imageUtils';
-import { uploadImage } from '../services/storageService';
+import { uploadImage, deleteBlobImages } from '../services/storageService';
 
 interface CloseTradeModalProps {
   currentData: any; // The current form data from TradeDetail
@@ -259,7 +259,15 @@ const CloseTradeModal: React.FC<CloseTradeModalProps> = ({ currentData, tagGroup
       }
   };
 
-  const handleRemoveImage = (index: number) => {
+  const handleRemoveImage = async (index: number) => {
+      const urlToRemove = formData.screenshots[index];
+      if (urlToRemove) {
+          try {
+              await deleteBlobImages([urlToRemove]);
+          } catch (e) {
+              console.error("Failed to delete blob:", e);
+          }
+      }
       setFormData(prev => ({
           ...prev,
           screenshots: prev.screenshots.filter((_: any, i: number) => i !== index)

@@ -8,7 +8,7 @@ import { calculateAutoTags } from '../utils/autoTagLogic';
 import { toLocalInputString, formatDisplayDate } from '../utils/dateUtils';
 import { compressImage, addScreenshot } from '../utils/imageUtils';
 import { generateId } from '../utils/idUtils';
-import { uploadImage } from '../services/storageService';
+import { uploadImage, deleteBlobImages } from '../services/storageService';
 
 const SectionHeader = ({ title }: { title: string }) => (
   <h3 className="text-xs font-bold text-primary uppercase tracking-wider mb-3">{title}</h3>
@@ -352,7 +352,16 @@ const TradeDetail: React.FC<TradeDetailProps> = ({ trade, accounts, tagGroups, s
       }
   };
 
-  const handleRemoveImage = (index: number) => {
+  const handleRemoveImage = async (index: number) => {
+      const urlToRemove = formData.screenshots[index];
+      if (urlToRemove) {
+          try {
+              // Best-effort delete from Vercel Blob
+              await deleteBlobImages([urlToRemove]);
+          } catch (e) {
+              console.error("Failed to delete blob:", e);
+          }
+      }
       setFormData((prev: any) => ({
           ...prev,
           screenshots: prev.screenshots.filter((_: any, i: number) => i !== index)

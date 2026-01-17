@@ -13,7 +13,7 @@ import DeleteConfirmationModal from './components/DeleteConfirmationModal';
 import DeleteAccountModal from './components/DeleteAccountModal';
 import TagManager from './components/TagManager';
 import StrategyManager from './components/StrategyManager';
-import { getTrades, saveTrade, deleteTrades, trashTrades, restoreTrades, getAccounts, saveAccount, deleteAccount, getTagGroups, saveTagGroups, getStrategies, saveStrategies, saveTrades, getSetting, saveSetting, getUsers, saveUser, deleteUser, adjustAccountBalance, uploadImage } from './services/storageService';
+import { getTrades, saveTrade, deleteTrades, trashTrades, restoreTrades, getAccounts, saveAccount, deleteAccount, getTagGroups, saveTagGroups, getStrategies, saveStrategies, saveTrades, getSetting, saveSetting, getUsers, saveUser, deleteUser, adjustAccountBalance, uploadImage, deleteBlobImages } from './services/storageService';
 import { fetchCurrentPrice, PriceResult } from './services/priceService';
 import { extractTradeParamsFromImage } from './services/geminiService';
 import { Trade, TradeStats, Account, TradeType, TradeStatus, ASSETS, TagGroup, OrderType, Session, TradeOutcome, User } from './types';
@@ -708,7 +708,16 @@ function App() {
       }
   }
 
-  const handleRemoveImage = (index: number) => {
+  const handleRemoveImage = async (index: number) => {
+      const urlToRemove = newTradeForm.screenshots[index];
+      if (urlToRemove) {
+          try {
+              // Best-effort delete from Vercel Blob
+              await deleteBlobImages([urlToRemove]);
+          } catch (e) {
+              console.error("Failed to delete blob:", e);
+          }
+      }
       setNewTradeForm((prev: any) => ({
           ...prev,
           screenshots: prev.screenshots.filter((_: any, i: number) => i !== index)
@@ -1025,7 +1034,7 @@ function App() {
             selectedAccountId={selectedAccountId}
             onTradeClick={() => {}} 
             onDeleteTrade={(id) => handleRequestDelete([id])} 
-            onDeleteTrades={handleRequestDelete}
+            onDeleteTrades={handleRequestDelete} 
             isTrash={true}
             onRestoreTrades={handleRestoreTrades}
             tagGroups={tagGroups}

@@ -239,6 +239,10 @@ const TradeDetail: React.FC<TradeDetailProps> = ({ trade, accounts, tagGroups, s
       }
   };
 
+  // Ref to hold the latest version of performSave
+  const performSaveRef = useRef(performSave);
+  useEffect(() => { performSaveRef.current = performSave; });
+
   useEffect(() => {
       if (isFirstRender.current) {
           isFirstRender.current = false;
@@ -253,12 +257,23 @@ const TradeDetail: React.FC<TradeDetailProps> = ({ trade, accounts, tagGroups, s
           performSave(formData, calculatedFinancials);
       }, 1000);
 
-      // Cleanup on Unmount (Force Save)
+      // Cleanup: Only clear the timeout. Do NOT save here.
+      // This prevents saving on every keystroke (re-render cleanup).
       return () => {
           if (saveTimeoutRef.current) clearTimeout(saveTimeoutRef.current);
-          performSave(formDataRef.current, financialsRef.current);
       };
   }, [formData]); 
+
+  // Separate effect for unmount saving
+  useEffect(() => {
+      return () => {
+          if (saveTimeoutRef.current) clearTimeout(saveTimeoutRef.current);
+          // Only save on unmount if we have actually started editing (not first render)
+          if (!isFirstRender.current) {
+              performSaveRef.current(formDataRef.current, financialsRef.current);
+          }
+      };
+  }, []);
 
   // Paste Listener
   useEffect(() => {
@@ -551,7 +566,7 @@ const TradeDetail: React.FC<TradeDetailProps> = ({ trade, accounts, tagGroups, s
   // Safe manual back to list (ensures flush)
   const handleBack = () => {
       if (saveTimeoutRef.current) clearTimeout(saveTimeoutRef.current);
-      performSave(formDataRef.current, financialsRef.current);
+      performSaveRef.current(formDataRef.current, financialsRef.current);
       onBack();
   }
 

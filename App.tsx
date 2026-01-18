@@ -742,6 +742,8 @@ function App() {
   
   const handleEditFromModal = () => {
       setIsViewModalOpen(false);
+      setSelectedDailyDate(null);
+      setSelectedWeek(null);
       setSubView('detail');
   };
 

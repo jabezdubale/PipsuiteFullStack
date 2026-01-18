@@ -11,11 +11,13 @@ interface WeeklyViewModalProps {
   onTradeClick: (trade: Trade) => void;
   onTrashTrades: (ids: string[]) => void;
   onExportTrades: (trades: Trade[]) => void;
+  deleteResultStatus?: 'idle' | 'confirmed' | 'cancelled';
+  deleteResultNonce?: number;
 }
 
 type ColumnKey = 'symbol' | 'type' | 'quantity' | 'rr' | 'outcome' | 'pnl';
 
-const WeeklyViewModal: React.FC<WeeklyViewModalProps> = ({ startDate, endDate, trades, onClose, onTradeClick, onTrashTrades, onExportTrades }) => {
+const WeeklyViewModal: React.FC<WeeklyViewModalProps> = ({ startDate, endDate, trades, onClose, onTradeClick, onTrashTrades, onExportTrades, deleteResultStatus, deleteResultNonce }) => {
   // Calculate weekly stats
   const weeklyPnL = trades.reduce((acc, t) => acc + t.pnl, 0);
   const winRate = trades.length > 0 
@@ -36,6 +38,14 @@ const WeeklyViewModal: React.FC<WeeklyViewModalProps> = ({ startDate, endDate, t
   useEffect(() => {
       if (!isSelectionMode) setSelectedIds(new Set());
   }, [isSelectionMode]);
+
+  // Effect to handle delete confirmation from App
+  useEffect(() => {
+      if (deleteResultStatus === 'confirmed') {
+          setSelectedIds(new Set());
+          setIsSelectionMode(false);
+      }
+  }, [deleteResultNonce, deleteResultStatus]);
 
   const toggleSelectAll = () => {
       if (selectedIds.size === trades.length) {
@@ -59,8 +69,7 @@ const WeeklyViewModal: React.FC<WeeklyViewModalProps> = ({ startDate, endDate, t
   const handleBulkDelete = () => {
       if (selectedIds.size === 0) return;
       onTrashTrades(Array.from(selectedIds));
-      setSelectedIds(new Set());
-      setIsSelectionMode(false);
+      // Do not clear selection immediately; wait for confirmation via props
   };
 
   const handleBulkExport = () => {

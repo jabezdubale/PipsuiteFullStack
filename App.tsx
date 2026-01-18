@@ -22,6 +22,7 @@ import UserModal from './components/UserModal';
 import { compressImage, addScreenshot } from './utils/imageUtils';
 import { generateId } from './utils/idUtils';
 import { exportTradesToCSV } from './utils/csvExport';
+import { getCalendarDateKey } from './utils/dateUtils';
 
 function App() {
   const [activeTab, setActiveTab] = useState('dashboard'); 
@@ -45,7 +46,6 @@ function App() {
   // Daily/Weekly View State
   const [selectedDailyDate, setSelectedDailyDate] = useState<string | null>(null);
   const [selectedWeek, setSelectedWeek] = useState<{ start: string; end: string } | null>(null);
-  const [selectedWeekTrades, setSelectedWeekTrades] = useState<Trade[]>([]);
 
   // Modal States
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
@@ -59,6 +59,8 @@ function App() {
   const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
   const [tradesToDelete, setTradesToDelete] = useState<string[]>([]);
   const [deleteModeOverride, setDeleteModeOverride] = useState<'soft' | 'permanent' | null>(null);
+  const [deleteSource, setDeleteSource] = useState<'journal' | 'calendar' | null>(null);
+  const [calendarDeleteResult, setCalendarDeleteResult] = useState<{ status: 'idle' | 'confirmed' | 'cancelled'; nonce: number }>({ status: 'idle', nonce: 0 });
   const [accountToDelete, setAccountToDelete] = useState<Account | null>(null);
 
   // Theme State
@@ -398,20 +400,22 @@ function App() {
 
   const selectedDailyTrades = useMemo(() => {
       if (!selectedDailyDate) return [];
-      return trades.filter(t => {
-          if (t.isDeleted) return false;
+      return filteredTrades.filter(t => {
           // Use Entry Time (entryDate) as primary date
           // Fix: Ensure we match the local date string format from calendar
-          const tDate = new Date(t.entryDate || t.createdAt);
-          const y = tDate.getFullYear();
-          const m = (tDate.getMonth() + 1).toString().padStart(2, '0');
-          const d = tDate.getDate().toString().padStart(2, '0');
-          const dateKey = `${y}-${m}-${d}`;
-          
-          return dateKey === selectedDailyDate && t.accountId === selectedAccountId;
+          const dateKey = getCalendarDateKey(t.entryDate || t.createdAt);
+          return dateKey === selectedDailyDate;
       });
-  }, [trades, selectedDailyDate, selectedAccountId]);
+  }, [filteredTrades, selectedDailyDate]);
 
+  const derivedWeekTrades = useMemo(() => {
+      if (!selectedWeek) return [];
+      const { start, end } = selectedWeek;
+      return filteredTrades.filter(t => {
+          const dateKey = getCalendarDateKey(t.entryDate || t.createdAt);
+          return dateKey >= start && dateKey <= end;
+      });
+  }, [filteredTrades, selectedWeek]);
 
   // Stats
   const stats: TradeStats = useMemo(() => {
@@ -531,6 +535,10 @@ function App() {
               setSelectedTradeId(null);
           }
 
+          if (deleteSource === 'calendar') {
+              setCalendarDeleteResult({ status: 'confirmed', nonce: Date.now() });
+          }
+
       } catch (e) {
           console.error(e);
           alert("Failed to delete trades.");
@@ -538,11 +546,13 @@ function App() {
           setIsDeleteModalOpen(false);
           setTradesToDelete([]);
           setDeleteModeOverride(null);
+          setDeleteSource(null);
       }
   };
 
   const handleTrashTradesFromModal = (ids: string[]) => {
       setDeleteModeOverride('soft');
+      setDeleteSource('calendar');
       handleRequestDelete(ids);
   };
 
@@ -999,9 +1009,8 @@ function App() {
                 onDayClick={(dateStr) => {
                     setSelectedDailyDate(dateStr);
                 }}
-                onWeekClick={(start, end, trades) => {
+                onWeekClick={(start, end) => {
                     setSelectedWeek({ start, end });
-                    setSelectedWeekTrades(trades);
                 }}
             />
         );
@@ -1180,6 +1189,8 @@ function App() {
             onTradeClick={navigateToTrade}
             onTrashTrades={handleTrashTradesFromModal}
             onExportTrades={exportTradesToCSV}
+            deleteResultStatus={calendarDeleteResult.status}
+            deleteResultNonce={calendarDeleteResult.nonce}
           />
       )}
 
@@ -1187,11 +1198,13 @@ function App() {
           <WeeklyViewModal 
             startDate={selectedWeek.start}
             endDate={selectedWeek.end}
-            trades={selectedWeekTrades}
+            trades={derivedWeekTrades}
             onClose={() => setSelectedWeek(null)}
             onTradeClick={navigateToTrade}
             onTrashTrades={handleTrashTradesFromModal}
             onExportTrades={exportTradesToCSV}
+            deleteResultStatus={calendarDeleteResult.status}
+            deleteResultNonce={calendarDeleteResult.nonce}
           />
       )}
       
@@ -1229,7 +1242,14 @@ function App() {
           count={tradesToDelete.length}
           tradeSymbol={tradesToDelete.length === 1 ? trades.find(t => t.id === tradesToDelete[0])?.symbol : undefined}
           onConfirm={executeDelete}
-          onCancel={() => { setIsDeleteModalOpen(false); setDeleteModeOverride(null); }}
+          onCancel={() => { 
+              setIsDeleteModalOpen(false); 
+              setDeleteModeOverride(null); 
+              if (deleteSource === 'calendar') {
+                  setCalendarDeleteResult({ status: 'cancelled', nonce: Date.now() });
+              }
+              setDeleteSource(null);
+          }}
           mode={deleteModeOverride ?? (activeTab === 'trash' ? 'permanent' : 'soft')}
       />
 

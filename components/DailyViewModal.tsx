@@ -10,11 +10,13 @@ interface DailyViewModalProps {
   onTradeClick: (trade: Trade) => void;
   onTrashTrades: (ids: string[]) => void;
   onExportTrades: (trades: Trade[]) => void;
+  deleteResultStatus?: 'idle' | 'confirmed' | 'cancelled';
+  deleteResultNonce?: number;
 }
 
 type ColumnKey = 'symbol' | 'type' | 'quantity' | 'rr' | 'outcome' | 'pnl';
 
-const DailyViewModal: React.FC<DailyViewModalProps> = ({ date, trades, onClose, onTradeClick, onTrashTrades, onExportTrades }) => {
+const DailyViewModal: React.FC<DailyViewModalProps> = ({ date, trades, onClose, onTradeClick, onTrashTrades, onExportTrades, deleteResultStatus, deleteResultNonce }) => {
   // Calculate daily stats
   const dailyPnL = trades.reduce((acc, t) => acc + t.pnl, 0);
   const winRate = trades.length > 0 
@@ -32,6 +34,14 @@ const DailyViewModal: React.FC<DailyViewModalProps> = ({ date, trades, onClose, 
   useEffect(() => {
       if (!isSelectionMode) setSelectedIds(new Set());
   }, [isSelectionMode]);
+
+  // Effect to handle delete confirmation from App
+  useEffect(() => {
+      if (deleteResultStatus === 'confirmed') {
+          setSelectedIds(new Set());
+          setIsSelectionMode(false);
+      }
+  }, [deleteResultNonce, deleteResultStatus]);
 
   const toggleSelectAll = () => {
       if (selectedIds.size === trades.length) {
@@ -55,8 +65,7 @@ const DailyViewModal: React.FC<DailyViewModalProps> = ({ date, trades, onClose, 
   const handleBulkDelete = () => {
       if (selectedIds.size === 0) return;
       onTrashTrades(Array.from(selectedIds));
-      setSelectedIds(new Set());
-      setIsSelectionMode(false);
+      // Do not clear selection immediately; wait for confirmation via props
   };
 
   const handleBulkExport = () => {

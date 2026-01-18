@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import Layout from './components/Layout';
 import Dashboard from './components/Dashboard';
@@ -79,7 +80,7 @@ function App() {
   
   const [newTradeForm, setNewTradeForm] = useState<any>({ symbol: 'XAUUSD', screenshots: [], tags: [], setup: '' });
   const [newImageUrl, setNewImageUrl] = useState('');
-  const [fxRate, setFxRate] = useState<number>(1);
+  const [fxRate, setFxRate] = useState<number | null>(null);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
   const analysisFileInputRef = useRef<HTMLInputElement>(null);
@@ -142,7 +143,7 @@ function App() {
               setFxRate(1);
           } else {
               const rate = await getFxRateToUSD(quote);
-              setFxRate(rate || 1);
+              setFxRate(rate); // Set null if failed
           }
       };
       fetchRate();
@@ -870,7 +871,7 @@ function App() {
         const balance = parseFloat(prev.balance);
         const lots = parseFloat(val);
         
-        if (!isNaN(entry) && !isNaN(sl) && !isNaN(balance) && !isNaN(lots) && fxRate > 0) {
+        if (!isNaN(entry) && !isNaN(sl) && !isNaN(balance) && !isNaN(lots) && fxRate !== null && fxRate > 0) {
             const pct = calculateRiskPercentage(entry, sl, lots, prev.symbol, balance, fxRate);
             if (pct > 0) updated.riskPercentage = pct.toFixed(2);
         }
@@ -887,7 +888,7 @@ function App() {
         const balance = parseFloat(prev.balance);
         const pct = parseFloat(val);
         
-        if (!isNaN(entry) && !isNaN(sl) && !isNaN(balance) && !isNaN(pct) && fxRate > 0) {
+        if (!isNaN(entry) && !isNaN(sl) && !isNaN(balance) && !isNaN(pct) && fxRate !== null && fxRate > 0) {
             const lots = calculateQuantity(entry, sl, pct, prev.symbol, balance, fxRate);
             if (lots > 0) updated.quantity = lots.toFixed(4);
         }
@@ -1298,7 +1299,7 @@ function App() {
                   <div className="grid grid-cols-2 gap-4">
                     <div>
                         <label className="block text-xs font-medium text-textMuted mb-1">Take Profit</label>
-                        <input type="number" step="any" value={newTradeForm.takeProfit || ''} onChange={(e) => setNewTradeForm({...newTradeForm, takeProfit: e.target.value})} className="w-full bg-background border border-border rounded p-2 text-sm text-textMain" required />
+                        <input type="number" step="any" value={newTradeForm.takeProfit || ''} onChange={(e) => setNewTradeForm({...newTradeForm, takeProfit: e.target.value})} className="w-full bg-background border border-border rounded p-2 text-sm text-textMain" />
                     </div>
                     <div>
                         <label className="block text-xs font-medium text-textMuted mb-1">Stop Loss</label>
@@ -1373,7 +1374,7 @@ function App() {
                                   <div className="font-bold text-loss">
                                       {metrics.quoteCurrency === 'USD' ? '$' : ''}{metrics.riskQuote.toFixed(2)}
                                   </div>
-                                  {metrics.quoteCurrency !== 'USD' && (
+                                  {metrics.quoteCurrency !== 'USD' && metrics.riskUSD !== null && (
                                       <div className="text-[9px] text-textMuted">${metrics.riskUSD.toFixed(2)}</div>
                                   )}
                               </div>
@@ -1382,7 +1383,7 @@ function App() {
                                   <div className="font-bold text-profit">
                                       {metrics.quoteCurrency === 'USD' ? '$' : ''}{metrics.rewardQuote.toFixed(2)}
                                   </div>
-                                  {metrics.quoteCurrency !== 'USD' && (
+                                  {metrics.quoteCurrency !== 'USD' && metrics.rewardUSD !== null && (
                                       <div className="text-[9px] text-textMuted">${metrics.rewardUSD.toFixed(2)}</div>
                                   )}
                               </div>
@@ -1398,7 +1399,7 @@ function App() {
                                   <span className="font-mono font-medium block">
                                       {metrics.quoteCurrency === 'USD' ? '$' : ''}{metrics.marginQuote.toFixed(2)}
                                   </span>
-                                  {metrics.quoteCurrency !== 'USD' && (
+                                  {metrics.quoteCurrency !== 'USD' && metrics.marginUSD !== null && (
                                       <span className="text-[9px] text-textMuted">${metrics.marginUSD.toFixed(2)}</span>
                                   )}
                               </div>
@@ -1414,6 +1415,13 @@ function App() {
                                   <div key={i}>{err}</div>
                               ))}
                           </div>
+                      </div>
+                  )}
+
+                  {metrics.needsSlTpForValidation && !metrics.validationErrors.length && (
+                      <div className="bg-orange-500/10 border border-orange-500/20 rounded-lg p-2 flex items-start gap-2 mt-[-10px]">
+                          <AlertTriangle size={14} className="text-orange-500 mt-0.5 shrink-0" />
+                          <span className="text-[10px] text-orange-500">Need both SL and TP to validate direction fully.</span>
                       </div>
                   )}
                   

@@ -7,15 +7,15 @@ export interface TradeMetrics {
   orderTypeLabel: string;
   
   riskQuote: number;
-  riskUSD: number;
+  riskUSD: number | null;
   
   rewardQuote: number;
-  rewardUSD: number;
+  rewardUSD: number | null;
   
   rr: number;
   
   marginQuote: number;
-  marginUSD: number;
+  marginUSD: number | null;
   
   // Distance metrics
   tpPoints: number;
@@ -25,6 +25,7 @@ export interface TradeMetrics {
   
   validationErrors: string[];
   isValid: boolean;
+  needsSlTpForValidation: boolean;
   
   quoteCurrency: string;
 }
@@ -35,10 +36,10 @@ export const calculateRiskPercentage = (
     quantity: number, 
     symbol: string, 
     balance: number, 
-    fxRate: number
+    fxRate: number | null
 ): number => {
     const asset = ASSETS.find(a => a.assetPair === symbol);
-    if (!asset || isNaN(entry) || isNaN(sl) || isNaN(quantity) || isNaN(balance) || balance === 0) return 0;
+    if (!asset || isNaN(entry) || isNaN(sl) || isNaN(quantity) || isNaN(balance) || balance === 0 || fxRate === null) return 0;
     
     const dist = Math.abs(entry - sl);
     const riskQuote = dist * asset.contractSize * quantity;
@@ -53,10 +54,10 @@ export const calculateQuantity = (
     riskPercentage: number, 
     symbol: string, 
     balance: number, 
-    fxRate: number
+    fxRate: number | null
 ): number => {
     const asset = ASSETS.find(a => a.assetPair === symbol);
-    if (!asset || isNaN(entry) || isNaN(sl) || isNaN(riskPercentage) || isNaN(balance) || fxRate === 0) return 0;
+    if (!asset || isNaN(entry) || isNaN(sl) || isNaN(riskPercentage) || isNaN(balance) || fxRate === null || fxRate === 0) return 0;
     
     const riskUSD = balance * (riskPercentage / 100);
     const riskQuote = riskUSD / fxRate;
@@ -79,24 +80,25 @@ export const computeTradeMetrics = (
     balance: string;
     riskPercentage: string;
   },
-  fxRateToUSD: number = 1
+  fxRateToUSD: number | null
 ): TradeMetrics => {
   const result: TradeMetrics = {
     direction: '-',
     orderTypeLabel: 'Market',
     riskQuote: 0,
-    riskUSD: 0,
+    riskUSD: null,
     rewardQuote: 0,
-    rewardUSD: 0,
+    rewardUSD: null,
     rr: 0,
     marginQuote: 0,
-    marginUSD: 0,
+    marginUSD: null,
     tpPoints: 0,
     tpPips: 0,
     slPoints: 0,
     slPips: 0,
     validationErrors: [],
     isValid: true,
+    needsSlTpForValidation: false,
     quoteCurrency: 'USD'
   };
 
@@ -130,8 +132,10 @@ export const computeTradeMetrics = (
       }
   } else if (hasTP) {
       direction = tp > entry ? TradeType.LONG : TradeType.SHORT;
+      result.needsSlTpForValidation = true;
   } else if (hasSL) {
       direction = sl < entry ? TradeType.LONG : TradeType.SHORT;
+      result.needsSlTpForValidation = true;
   }
 
   if (direction) {
@@ -139,7 +143,7 @@ export const computeTradeMetrics = (
   } else {
       if (hasTP || hasSL) {
           // Case where logic failed above or edge case (Entry == TP/SL)
-          result.validationErrors.push("Cannot determine direction from Price levels.");
+          if (result.isValid) result.validationErrors.push("Cannot determine direction from Price levels.");
       }
   }
 
@@ -176,25 +180,31 @@ export const computeTradeMetrics = (
   result.slPoints = slCalc.points;
   result.slPips = slCalc.pips;
 
+  const validRate = (result.quoteCurrency === 'USD') ? 1 : fxRateToUSD;
+
   if (!isNaN(qty)) {
       // Risk
       if (hasSL) {
           result.riskQuote = slCalc.points * asset.contractSize * qty;
-          result.riskUSD = result.riskQuote * fxRateToUSD;
-      } else {
-          // Fallback if risk% provided but no SL (theoretical calc) - skip for now as SL required for precise calc
+          if (validRate !== null) {
+              result.riskUSD = result.riskQuote * validRate;
+          }
       }
 
       // Reward
       if (hasTP) {
           result.rewardQuote = tpCalc.points * asset.contractSize * qty;
-          result.rewardUSD = result.rewardQuote * fxRateToUSD;
+          if (validRate !== null) {
+              result.rewardUSD = result.rewardQuote * validRate;
+          }
       }
 
       // Margin
       if (entry > 0) {
           result.marginQuote = (entry * asset.contractSize * qty) / lev;
-          result.marginUSD = result.marginQuote * fxRateToUSD;
+          if (validRate !== null) {
+              result.marginUSD = result.marginQuote * validRate;
+          }
       }
   }
 

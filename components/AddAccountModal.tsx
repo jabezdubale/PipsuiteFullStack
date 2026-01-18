@@ -26,7 +26,7 @@ const AddAccountModal: React.FC<AddAccountModalProps> = ({ onSave, onClose, user
       id: generateId('acc'),
       userId: userId, // Link to current user
       name: formData.name,
-      currency: formData.currency || 'USD',
+      currency: 'USD', // Enforce USD
       balance: Number(formData.balance) || 0,
       isDemo: formData.type === 'Demo',
       type: formData.type as 'Real' | 'Demo' | 'Funded'
@@ -64,29 +64,15 @@ const AddAccountModal: React.FC<AddAccountModalProps> = ({ onSave, onClose, user
             />
           </div>
           
-          <div className="grid grid-cols-2 gap-4">
-            <div>
-              <label className="block text-xs font-medium text-textMuted mb-1">Currency</label>
-              <select 
-                value={formData.currency} 
-                onChange={e => setFormData({...formData, currency: e.target.value})}
-                className="w-full bg-background border border-border rounded p-2 text-sm text-textMain focus:ring-1 focus:ring-primary outline-none"
-              >
-                <option value="USD">USD</option>
-                <option value="EUR">EUR</option>
-                <option value="GBP">GBP</option>
-              </select>
-            </div>
-            <div>
-               <label className="block text-xs font-medium text-textMuted mb-1">Initial Balance</label>
-               <input 
-                 type="number" 
-                 value={formData.balance} 
-                 onChange={e => setFormData({...formData, balance: e.target.value as any})}
-                 className="w-full bg-background border border-border rounded p-2 text-sm text-textMain focus:ring-1 focus:ring-primary outline-none"
-                 placeholder="0.00"
-               />
-            </div>
+          <div>
+             <label className="block text-xs font-medium text-textMuted mb-1">Initial Balance ($)</label>
+             <input 
+               type="number" 
+               value={formData.balance} 
+               onChange={e => setFormData({...formData, balance: e.target.value as any})}
+               className="w-full bg-background border border-border rounded p-2 text-sm text-textMain focus:ring-1 focus:ring-primary outline-none"
+               placeholder="0.00"
+             />
           </div>
 
           <div>

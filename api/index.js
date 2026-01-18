@@ -252,6 +252,17 @@ const ensureSchema = async (db) => {
                 // Ignore errors
             }
         }
+
+        // 8. Enforce USD Currency
+        try {
+            // Update NULL or empty currency to USD
+            await db.query("UPDATE accounts SET currency = 'USD' WHERE currency IS NULL OR currency = ''");
+            // Set Default
+            await db.query("ALTER TABLE accounts ALTER COLUMN currency SET DEFAULT 'USD'");
+        } catch (e) {
+            console.warn("Currency update warning (non-fatal):", e.message);
+        }
+
         isSchemaChecked = true;
     } catch (err) {
         console.error("Schema init failed:", err);

@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import Layout from './components/Layout';
 import Dashboard from './components/Dashboard';
@@ -16,8 +15,11 @@ import StrategyManager from './components/StrategyManager';
 import { getTrades, saveTrade, deleteTrades, trashTrades, restoreTrades, getAccounts, saveAccount, deleteAccount, getTagGroups, saveTagGroups, getStrategies, saveStrategies, saveTrades, getSetting, saveSetting, getUsers, saveUser, deleteUser, adjustAccountBalance, uploadImage, deleteBlobImages } from './services/storageService';
 import { fetchCurrentPrice, PriceResult } from './services/priceService';
 import { extractTradeParamsFromImage } from './services/geminiService';
+import { getFxRateToUSD } from './services/fxService';
+import { computeTradeMetrics, calculateRiskPercentage, calculateQuantity } from './utils/tradeCalc';
+import { getBaseQuote } from './utils/symbol';
 import { Trade, TradeStats, Account, TradeType, TradeStatus, ASSETS, TagGroup, OrderType, Session, TradeOutcome, User } from './types';
-import { X, ChevronDown, Calculator, TrendingUp, TrendingDown, RefreshCw, Loader2, Upload, Plus, Trash2, Clipboard, ChevronUp, Eraser, User as UserIcon, Database } from 'lucide-react';
+import { X, ChevronDown, Calculator, TrendingUp, TrendingDown, RefreshCw, Loader2, Upload, Plus, Trash2, Clipboard, ChevronUp, Eraser, User as UserIcon, Database, AlertTriangle } from 'lucide-react';
 import UserModal from './components/UserModal';
 import { compressImage, addScreenshot } from './utils/imageUtils';
 import { generateId } from './utils/idUtils';
@@ -77,6 +79,8 @@ function App() {
   
   const [newTradeForm, setNewTradeForm] = useState<any>({ symbol: 'XAUUSD', screenshots: [], tags: [], setup: '' });
   const [newImageUrl, setNewImageUrl] = useState('');
+  const [fxRate, setFxRate] = useState<number>(1);
+
   const fileInputRef = useRef<HTMLInputElement>(null);
   const analysisFileInputRef = useRef<HTMLInputElement>(null);
 
@@ -125,6 +129,24 @@ function App() {
 
     loadData();
   }, []);
+
+  // Update FX Rate when symbol changes
+  useEffect(() => {
+      const fetchRate = async () => {
+          if (!newTradeForm.symbol) return;
+          // Use default if unknown
+          const quoteInfo = getBaseQuote(newTradeForm.symbol);
+          const quote = quoteInfo ? quoteInfo.quote : 'USD';
+          
+          if (quote === 'USD') {
+              setFxRate(1);
+          } else {
+              const rate = await getFxRateToUSD(quote);
+              setFxRate(rate || 1);
+          }
+      };
+      fetchRate();
+  }, [newTradeForm.symbol]);
 
   const handleSwitchUser = async (userId: string, userList = users) => {
       const newUser = userList.find(u => u.id === userId);
@@ -435,10 +457,6 @@ function App() {
     const totalLossPnl = Math.abs(losses.reduce((sum, t) => sum + t.pnl, 0));
     
     // Net PnL includes partials from open trades? Usually yes, but here we strictly follow dashboard logic
-    // If dashboard shows open trades in list, stats usually reflect closed.
-    // If we want Net PnL to include everything, use filteredTrades.
-    // But for WinRate/AvgWin/Loss, use closed.
-    
     const allNetPnL = filteredTrades.reduce((sum, t) => sum + t.pnl, 0);
     
     const winRate = closedTrades.length > 0 ? (wins.length / closedTrades.length) * 100 : 0;
@@ -750,27 +768,21 @@ function App() {
   const handleQuickAdd = (e: React.FormEvent) => {
     e.preventDefault();
     if (!newTradeForm.symbol || !newTradeForm.entryPrice) return;
+    if (!metrics.isValid) return; // Prevent save if invalid
 
     const entryPrice = parseFloat(newTradeForm.entryPrice);
     const takeProfit = newTradeForm.takeProfit ? parseFloat(newTradeForm.takeProfit) : undefined;
     
-    let determinedType = TradeType.LONG;
-    if (takeProfit && entryPrice) {
-      if (takeProfit < entryPrice) {
-        determinedType = TradeType.SHORT;
-      }
-    } else if (newTradeForm.stopLoss && entryPrice) {
-       if (parseFloat(newTradeForm.stopLoss) > entryPrice) {
-           determinedType = TradeType.SHORT;
-       }
-    }
-
+    // Direction is determined by calculator or inference
+    let determinedType = metrics.direction === 'LONG' ? TradeType.LONG : (metrics.direction === 'SHORT' ? TradeType.SHORT : TradeType.LONG);
+    
+    // Order Type from calculator
     let determinedOrderType = OrderType.MARKET;
-    if (tradeCalculations?.orderType) {
-         if (tradeCalculations.orderType.includes('Limit')) {
-             determinedOrderType = tradeCalculations.orderType.includes('Buy') ? OrderType.BUY_LIMIT : OrderType.SELL_LIMIT;
-         } else if (tradeCalculations.orderType.includes('Stop')) {
-             determinedOrderType = tradeCalculations.orderType.includes('Buy') ? OrderType.BUY_STOP : OrderType.SELL_STOP;
+    if (metrics.orderTypeLabel) {
+         if (metrics.orderTypeLabel.includes('Limit')) {
+             determinedOrderType = metrics.orderTypeLabel.includes('Buy') ? OrderType.BUY_LIMIT : OrderType.SELL_LIMIT;
+         } else if (metrics.orderTypeLabel.includes('Stop')) {
+             determinedOrderType = metrics.orderTypeLabel.includes('Buy') ? OrderType.BUY_STOP : OrderType.SELL_STOP;
          }
     }
 
@@ -841,145 +853,46 @@ function App() {
   }, [newTradeForm.symbol, newTradeForm.entryPrice, newTradeForm.stopLoss, newTradeForm.balance]);
 
   const isFormComplete = useMemo(() => {
-    const { symbol, entryPrice, takeProfit, stopLoss, leverage, balance, quantity, riskPercentage } = newTradeForm;
-    return !!(
-        symbol && 
-        entryPrice && 
-        takeProfit && 
-        stopLoss && 
-        leverage && 
-        balance && 
-        quantity && 
-        riskPercentage
-    );
-  }, [newTradeForm]);
+      return !!(newTradeForm.symbol && newTradeForm.entryPrice && (newTradeForm.stopLoss || newTradeForm.takeProfit));
+  }, [newTradeForm.symbol, newTradeForm.entryPrice, newTradeForm.stopLoss, newTradeForm.takeProfit]);
 
-  const tradeCalculations = useMemo(() => {
-    const { symbol, entryPrice, currentPrice, takeProfit, stopLoss, quantity, leverage, balance, riskPercentage } = newTradeForm;
-    
-    if (!symbol || !entryPrice) return null;
-
-    const asset = ASSETS.find(a => a.assetPair === symbol);
-    if (!asset) return null;
-
-    const entry = parseFloat(entryPrice);
-    const current = parseFloat(currentPrice);
-    const tp = parseFloat(takeProfit);
-    const sl = parseFloat(stopLoss);
-    const lots = parseFloat(quantity);
-    const lev = parseFloat(leverage) || 1;
-
-    let direction = 'LONG';
-    if (!isNaN(tp)) {
-        direction = tp > entry ? 'LONG' : 'SHORT';
-    } else if (!isNaN(sl)) {
-        direction = sl < entry ? 'LONG' : 'SHORT';
-    }
-
-    let orderType = '-';
-    if (!isNaN(current) && !isNaN(entry)) {
-        if (direction === 'LONG') {
-             if (entry < current) orderType = 'Buy Limit';
-             else if (entry > current) orderType = 'Buy Stop';
-             else orderType = 'Market Buy';
-        } else {
-             if (entry > current) orderType = 'Sell Limit';
-             else if (entry < current) orderType = 'Sell Stop';
-             else orderType = 'Market Sell';
-        }
-    }
-
-    const contractSize = asset.contractSize;
-    
-    const calculateDistances = (target: number) => {
-        if (isNaN(target)) return { points: 0, pips: 0, ticks: 0 };
-        const dist = Math.abs(target - entry);
-        return {
-            points: dist,
-            pips: dist / asset.pip,
-            ticks: dist / asset.tick
-        };
-    };
-
-    const tpCalc = calculateDistances(tp);
-    const slCalc = calculateDistances(sl);
-
-    let riskAmount = 0;
-    let potentialProfit = 0;
-    
-    if (!isNaN(lots)) {
-        if (!isNaN(sl)) {
-            riskAmount = slCalc.points * contractSize * lots;
-        }
-        if (!isNaN(tp)) {
-            potentialProfit = tpCalc.points * contractSize * lots;
-        }
-    }
-
-    let displayRisk = riskAmount;
-    if (balance && riskPercentage) {
-        const bal = parseFloat(balance);
-        const rp = parseFloat(riskPercentage);
-        if (!isNaN(bal) && !isNaN(rp)) {
-             const theoreticalRisk = bal * (rp / 100);
-             if (riskAmount > 0 && Math.abs(riskAmount - theoreticalRisk) < (theoreticalRisk * 0.05)) {
-                 displayRisk = theoreticalRisk;
-             }
-        }
-    }
-
-    let rr = 0;
-    if (displayRisk > 0) {
-        rr = potentialProfit / displayRisk;
-    }
-
-    let requiredMargin = 0;
-    if (!isNaN(lots) && !isNaN(entry)) {
-        requiredMargin = (entry * contractSize * lots) / lev;
-    }
-
-    return {
-        direction,
-        orderType,
-        tpCalc,
-        slCalc,
-        riskAmount: displayRisk,
-        potentialProfit,
-        rr,
-        requiredMargin
-    };
-  }, [newTradeForm]);
+  // Use Centralized Calculator
+  const metrics = useMemo(() => {
+      return computeTradeMetrics(newTradeForm, fxRate);
+  }, [newTradeForm, fxRate]);
 
   const handleLotSizeChange = (val: string) => {
-    setNewTradeForm(prev => ({ ...prev, quantity: val }));
-    if (!canCalculateRisk || !newTradeForm.symbol || !val) return;
-    const lots = parseFloat(val);
-    if (isNaN(lots)) return;
-    const asset = ASSETS.find(a => a.assetPair === newTradeForm.symbol);
-    if (!asset) return;
-    const entry = parseFloat(newTradeForm.entryPrice);
-    const sl = parseFloat(newTradeForm.stopLoss);
-    const balance = parseFloat(newTradeForm.balance);
-    const priceDiff = Math.abs(entry - sl);
-    const riskAmount = priceDiff * asset.contractSize * lots;
-    const riskPct = (riskAmount / balance) * 100;
-    setNewTradeForm(prev => ({ ...prev, quantity: val, riskPercentage: riskPct.toFixed(3) }));
+    setNewTradeForm(prev => {
+        const updated = { ...prev, quantity: val };
+        // Reverse Calc: Update Risk %
+        const entry = parseFloat(prev.entryPrice);
+        const sl = parseFloat(prev.stopLoss);
+        const balance = parseFloat(prev.balance);
+        const lots = parseFloat(val);
+        
+        if (!isNaN(entry) && !isNaN(sl) && !isNaN(balance) && !isNaN(lots) && fxRate > 0) {
+            const pct = calculateRiskPercentage(entry, sl, lots, prev.symbol, balance, fxRate);
+            if (pct > 0) updated.riskPercentage = pct.toFixed(2);
+        }
+        return updated;
+    });
   };
 
   const handleRiskPctChange = (val: string) => {
-    setNewTradeForm(prev => ({ ...prev, riskPercentage: val }));
-    if (!canCalculateRisk || !newTradeForm.symbol || !val) return;
-    const riskPct = parseFloat(val);
-    if (isNaN(riskPct)) return;
-    const asset = ASSETS.find(a => a.assetPair === newTradeForm.symbol);
-    if (!asset) return;
-    const entry = parseFloat(newTradeForm.entryPrice);
-    const sl = parseFloat(newTradeForm.stopLoss);
-    const balance = parseFloat(newTradeForm.balance);
-    const riskAmount = balance * (riskPct / 100);
-    const priceDiff = Math.abs(entry - sl);
-    const lots = riskAmount / (priceDiff * asset.contractSize);
-    setNewTradeForm(prev => ({ ...prev, riskPercentage: val, quantity: lots.toFixed(4) }));
+    setNewTradeForm(prev => {
+        const updated = { ...prev, riskPercentage: val };
+        // Reverse Calc: Update Lots
+        const entry = parseFloat(prev.entryPrice);
+        const sl = parseFloat(prev.stopLoss);
+        const balance = parseFloat(prev.balance);
+        const pct = parseFloat(val);
+        
+        if (!isNaN(entry) && !isNaN(sl) && !isNaN(balance) && !isNaN(pct) && fxRate > 0) {
+            const lots = calculateQuantity(entry, sl, pct, prev.symbol, balance, fxRate);
+            if (lots > 0) updated.quantity = lots.toFixed(4);
+        }
+        return updated;
+    });
   };
 
   const renderContent = () => {
@@ -1042,9 +955,9 @@ function App() {
           />
         );
       case 'settings':
-        // ... (settings render code remains unchanged)
         return (
           <div className="p-8 max-w-2xl mx-auto space-y-8 animate-in fade-in duration-500">
+            {/* ... Existing Settings Code ... */}
             <h2 className="text-xl font-bold">Settings</h2>
             
             {/* User Management Section */}
@@ -1133,18 +1046,6 @@ function App() {
                 <p className="text-sm text-textMuted leading-relaxed mb-4">
                     Your trades, accounts, and journal entries are securely stored in the <strong>Database</strong>.
                 </p>
-                <div className="text-xs text-textMuted bg-surfaceHighlight/30 p-4 rounded-lg border border-border/50">
-                    <p className="font-semibold mb-2 text-textMain">Local Browser Storage (LocalStorage) is used for:</p>
-                    <ul className="list-disc pl-4 space-y-1.5 opacity-90">
-                        <li>Selected User Profile & Account</li>
-                        <li>Dashboard Layout & Widget Visibility</li>
-                        <li>Trade List Column Preferences</li>
-                        <li>Active Filters (Tags, Date ranges)</li>
-                    </ul>
-                    <p className="mt-3 opacity-70 italic border-t border-border/30 pt-2">
-                        Clearing your browser cache will reset these display preferences, but your trading data will remain safe.
-                    </p>
-                </div>
             </div>
           </div>
         );
@@ -1270,7 +1171,6 @@ function App() {
             className="fixed inset-0 bg-black/70 flex items-center justify-center z-[200] p-4 backdrop-blur-sm animate-in fade-in"
             onClick={() => setIsAddModalOpen(false)}
         >
-          {/* ... Content of Add Trade Modal ... */}
           <div 
             className="bg-surface border border-border rounded-xl w-full max-w-lg shadow-2xl flex flex-col max-h-[90vh]"
             onClick={(e) => e.stopPropagation()}
@@ -1435,20 +1335,20 @@ function App() {
                       <p className="text-[10px] text-orange-500/80 mt-[-10px]">* Fill Asset, Entry, SL, and Balance to enable calculators.</p>
                   )}
                   
-                  {isFormComplete && tradeCalculations && (
+                  {isFormComplete && (
                       <div className="bg-surfaceHighlight/50 border border-border rounded-lg p-3 space-y-3 text-xs">
                           {/* ... Calc UI ... */}
                           <div className="grid grid-cols-2 border-b border-border/50 pb-2">
                             <div>
                               <span className="text-textMuted font-medium text-[10px] uppercase block mb-1">Direction</span>
-                              <span className={`font-bold flex items-center gap-1 ${tradeCalculations.direction === 'LONG' ? 'text-profit' : 'text-loss'}`}>
-                                  {tradeCalculations.direction === 'LONG' ? <TrendingUp size={14}/> : <TrendingDown size={14}/>}
-                                  {tradeCalculations.direction}
+                              <span className={`font-bold flex items-center gap-1 ${metrics.direction === 'LONG' ? 'text-profit' : metrics.direction === 'SHORT' ? 'text-loss' : 'text-textMain'}`}>
+                                  {metrics.direction === 'LONG' ? <TrendingUp size={14}/> : metrics.direction === 'SHORT' ? <TrendingDown size={14}/> : '-'}
+                                  {metrics.direction}
                               </span>
                             </div>
                             <div className="text-right">
                               <span className="text-textMuted font-medium text-[10px] uppercase block mb-1">Order Type</span>
-                              <span className="font-bold text-textMain">{tradeCalculations.orderType}</span>
+                              <span className="font-bold text-textMain">{metrics.orderTypeLabel}</span>
                             </div>
                           </div>
                           
@@ -1456,40 +1356,69 @@ function App() {
                               <div className="flex flex-col gap-0.5">
                                   <span className="text-textMuted text-[10px] uppercase">Take Profit</span>
                                   <div className="font-mono text-textMain">
-                                      {tradeCalculations.tpCalc.points.toFixed(2)} Pts <span className="text-textMuted">|</span> {tradeCalculations.tpCalc.pips.toFixed(1)} Pips
+                                      {metrics.tpPoints.toFixed(2)} Pts <span className="text-textMuted">|</span> {metrics.tpPips.toFixed(1)} Pips
                                   </div>
                               </div>
                               <div className="flex flex-col gap-0.5 text-right">
                                   <span className="text-textMuted text-[10px] uppercase">Stop Loss</span>
                                   <div className="font-mono text-textMain">
-                                      {tradeCalculations.slCalc.points.toFixed(2)} Pts <span className="text-textMuted">|</span> {tradeCalculations.slCalc.pips.toFixed(1)} Pips
+                                      {metrics.slPoints.toFixed(2)} Pts <span className="text-textMuted">|</span> {metrics.slPips.toFixed(1)} Pips
                                   </div>
                               </div>
                           </div>
 
                           <div className="grid grid-cols-3 gap-2 pt-2 border-t border-border/50">
                               <div>
-                                  <div className="text-[10px] text-textMuted uppercase mb-0.5">Risk</div>
-                                  <div className="font-bold text-loss">${tradeCalculations.riskAmount.toFixed(2)}</div>
+                                  <div className="text-[10px] text-textMuted uppercase mb-0.5">Risk ({metrics.quoteCurrency})</div>
+                                  <div className="font-bold text-loss">
+                                      {metrics.quoteCurrency === 'USD' ? '$' : ''}{metrics.riskQuote.toFixed(2)}
+                                  </div>
+                                  {metrics.quoteCurrency !== 'USD' && (
+                                      <div className="text-[9px] text-textMuted">${metrics.riskUSD.toFixed(2)}</div>
+                                  )}
                               </div>
                               <div className="text-center">
-                                  <div className="text-[10px] text-textMuted uppercase mb-0.5">Reward</div>
-                                  <div className="font-bold text-profit">${tradeCalculations.potentialProfit.toFixed(2)}</div>
+                                  <div className="text-[10px] text-textMuted uppercase mb-0.5">Reward ({metrics.quoteCurrency})</div>
+                                  <div className="font-bold text-profit">
+                                      {metrics.quoteCurrency === 'USD' ? '$' : ''}{metrics.rewardQuote.toFixed(2)}
+                                  </div>
+                                  {metrics.quoteCurrency !== 'USD' && (
+                                      <div className="text-[9px] text-textMuted">${metrics.rewardUSD.toFixed(2)}</div>
+                                  )}
                               </div>
                               <div className="text-right">
                                   <div className="text-[10px] text-textMuted uppercase mb-0.5">RR Ratio</div>
-                                  <div className="font-bold text-primary">1:{tradeCalculations.rr.toFixed(2)}</div>
+                                  <div className="font-bold text-primary">1:{metrics.rr.toFixed(2)}</div>
                               </div>
                           </div>
                           
                           <div className="flex justify-between items-center bg-background p-2 rounded border border-border/50">
                               <span className="text-textMuted flex items-center gap-1"><Calculator size={10}/> Margin</span>
-                              <span className="font-mono font-medium">${tradeCalculations.requiredMargin.toFixed(2)}</span>
+                              <div className="text-right">
+                                  <span className="font-mono font-medium block">
+                                      {metrics.quoteCurrency === 'USD' ? '$' : ''}{metrics.marginQuote.toFixed(2)}
+                                  </span>
+                                  {metrics.quoteCurrency !== 'USD' && (
+                                      <span className="text-[9px] text-textMuted">${metrics.marginUSD.toFixed(2)}</span>
+                                  )}
+                              </div>
+                          </div>
+                      </div>
+                  )}
+
+                  {metrics.validationErrors.length > 0 && (
+                      <div className="bg-loss/10 border border-loss/20 rounded-lg p-3 flex items-start gap-2">
+                          <AlertTriangle size={16} className="text-loss mt-0.5 shrink-0" />
+                          <div className="text-xs text-loss">
+                              {metrics.validationErrors.map((err, i) => (
+                                  <div key={i}>{err}</div>
+                              ))}
                           </div>
                       </div>
                   )}
                   
                   <div className="bg-surface border border-border rounded-lg p-2 mt-2">
+                      {/* ... Screenshots Section ... */}
                       <h4 className="text-[10px] font-bold mb-1.5 flex justify-between items-center text-textMuted uppercase tracking-wider">
                           Trade Screenshots
                           <span className="text-[9px] bg-surfaceHighlight px-1.5 py-0.5 rounded text-textMuted">Paste enabled (Ctrl+V)</span>
@@ -1663,9 +1592,9 @@ function App() {
                   <button 
                       type="submit" 
                       form="add-trade-form"
-                      disabled={accounts.length === 0 || isUploading}
+                      disabled={accounts.length === 0 || isUploading || !metrics.isValid}
                       className={`flex-1 py-2 rounded-lg font-bold text-sm shadow-md transition-all flex items-center justify-center gap-2 ${
-                          accounts.length === 0 || isUploading
+                          accounts.length === 0 || isUploading || !metrics.isValid
                           ? 'bg-surfaceHighlight text-textMuted cursor-not-allowed opacity-50 blur-[1px]' 
                           : 'bg-primary hover:bg-blue-600 text-white'
                       }`}

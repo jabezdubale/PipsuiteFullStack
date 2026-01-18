@@ -888,7 +888,16 @@ function App() {
     setNewTradeForm({ symbol: '', screenshots: [], tags: [], setup: '' });
   };
 
-  const handleClearForm = () => {
+  const handleClearForm = async () => {
+    setIsUploading(true);
+    if (newTradeForm.screenshots && newTradeForm.screenshots.length > 0) {
+        try {
+            await deleteBlobImages(newTradeForm.screenshots);
+        } catch (e) {
+            console.error("Failed to cleanup blobs on clear", e);
+        }
+    }
+
     setNewTradeForm((prev: any) => ({
       symbol: prev.symbol,
       currentPrice: prev.currentPrice,
@@ -906,6 +915,7 @@ function App() {
       tags: []
     }));
     setNewImageUrl('');
+    setIsUploading(false);
   };
 
   const canCalculateRisk = useMemo(() => {
@@ -1727,7 +1737,8 @@ function App() {
                   <button
                       type="button"
                       onClick={handleClearForm}
-                      className="px-4 py-2 bg-surface border border-border hover:bg-surfaceHighlight text-textMuted hover:text-textMain rounded-lg font-medium text-sm transition-colors flex items-center justify-center gap-2"
+                      disabled={isUploading}
+                      className={`px-4 py-2 bg-surface border border-border hover:bg-surfaceHighlight text-textMuted hover:text-textMain rounded-lg font-medium text-sm transition-colors flex items-center justify-center gap-2 ${isUploading ? 'opacity-50 cursor-not-allowed' : ''}`}
                       title="Clear Form"
                   >
                       <Eraser size={16} />

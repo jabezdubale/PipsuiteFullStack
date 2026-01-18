@@ -155,8 +155,9 @@ const CloseTradeModal: React.FC<CloseTradeModalProps> = ({ currentData, tagGroup
   
   const netPnl = useMemo(() => {
     const main = parseFloat(formData.mainPnl) || 0;
-    return main + partialsTotal;
-  }, [formData.mainPnl, partialsTotal]);
+    const fees = parseFloat(formData.fees) || 0;
+    return main + partialsTotal - fees;
+  }, [formData.mainPnl, formData.fees, partialsTotal]);
 
   const plannedReward = useMemo(() => {
       const asset = ASSETS.find(a => a.assetPair === currentData.symbol);
@@ -170,16 +171,6 @@ const CloseTradeModal: React.FC<CloseTradeModalProps> = ({ currentData, tagGroup
       }
       return 0;
   }, [currentData]);
-
-  // Fee Calculation Replication (Planned Reward - Net PnL)
-  useEffect(() => {
-      if (formData.mainPnl === '') return; // Don't auto-calc if empty
-      
-      if (plannedReward > 0) {
-          const calcFees = plannedReward - netPnl;
-          setFormData(prev => ({ ...prev, fees: calcFees.toFixed(2) }));
-      }
-  }, [netPnl, plannedReward, formData.mainPnl]);
 
   // --- Helpers ---
   const handleDateTimeChange = (field: 'entry' | 'exit', value: string) => {
@@ -346,7 +337,8 @@ const CloseTradeModal: React.FC<CloseTradeModalProps> = ({ currentData, tagGroup
         affectBalance, // Pass the checkbox state back
         // Explicitly convert Final SL/TP to numbers for DB persistence
         finalStopLoss: formData.finalStopLoss ? parseFloat(formData.finalStopLoss) : undefined,
-        finalTakeProfit: formData.finalTakeProfit ? parseFloat(formData.finalTakeProfit) : undefined
+        finalTakeProfit: formData.finalTakeProfit ? parseFloat(formData.finalTakeProfit) : undefined,
+        fees: parseFloat(formData.fees) || 0
     });
   };
 
@@ -461,7 +453,6 @@ const CloseTradeModal: React.FC<CloseTradeModalProps> = ({ currentData, tagGroup
                             <div>
                                 <label className="block text-xs font-medium text-textMuted mb-1.5 flex justify-between">
                                     <span>Fees / Commission</span>
-                                    <span className="text-[10px] opacity-60">Auto-calcs from (Planned - Net)</span>
                                 </label>
                                 <div className="relative">
                                     <span className="absolute left-3 top-1/2 -translate-y-1/2 text-textMuted">$</span>
@@ -469,8 +460,8 @@ const CloseTradeModal: React.FC<CloseTradeModalProps> = ({ currentData, tagGroup
                                         type="number" 
                                         step="any"
                                         value={formData.fees}
-                                        readOnly
-                                        className="w-full bg-surfaceHighlight/50 border border-border/40 rounded-lg pl-7 pr-3 py-2 text-sm text-textMuted font-medium focus:outline-none cursor-default"
+                                        onChange={(e) => setFormData({...formData, fees: e.target.value})}
+                                        className="w-full bg-surface border border-border/40 rounded-lg pl-7 pr-3 py-2 text-sm font-bold text-textMain focus:ring-1 focus:ring-primary outline-none"
                                         placeholder="0.00"
                                     />
                                 </div>

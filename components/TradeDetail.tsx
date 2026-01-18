@@ -120,14 +120,20 @@ const TradeDetail: React.FC<TradeDetailProps> = ({ trade, accounts, tagGroups, s
     const partialsTotal = (formData.partials || []).reduce((acc: number, p: TradePartial) => acc + (p.pnl || 0), 0);
     const hasPartials = formData.partials && formData.partials.length > 0;
     
+    const feesVal = parseFloat(formData.fees) || 0;
+
     let netPnlDisplay: string | number = '-';
     let netPnlValue = 0; 
 
+    // Net PnL = Main + Partials - Fees
+    // Logic: If mainPnl is entered, we can calculate full Net. 
+    // If only partials exist, Net = Partials - Fees.
+    
     if (hasMainPnl) {
-        netPnlValue = mainPnlVal + partialsTotal;
+        netPnlValue = mainPnlVal + partialsTotal - feesVal;
         netPnlDisplay = netPnlValue;
     } else if (hasPartials) {
-        netPnlValue = partialsTotal;
+        netPnlValue = partialsTotal - feesVal;
         netPnlDisplay = netPnlValue;
     } else {
         netPnlValue = 0;
@@ -154,20 +160,11 @@ const TradeDetail: React.FC<TradeDetailProps> = ({ trade, accounts, tagGroups, s
          }
     }
     
-    let feesDisplay: string | number = '-';
-    let feesValue = 0;
-
-    if (hasMainPnl) {
-        feesValue = plannedReward - netPnlValue;
-        feesDisplay = feesValue;
-    }
-    
     return {
         partialsTotal,
         netPnlValue,
         netPnlDisplay,
-        feesValue,
-        feesDisplay,
+        feesValue: feesVal,
         plannedReward,
         rr
     };
@@ -212,7 +209,7 @@ const TradeDetail: React.FC<TradeDetailProps> = ({ trade, accounts, tagGroups, s
       const entryPrice = parseFloat(currentFormData.entryPrice) || 0;
       const exitPrice = parseFloat(currentFormData.exitPrice) || 0;
       const quantity = parseFloat(currentFormData.quantity) || 0;
-      const fees = typeof currentFinancials.feesDisplay === 'number' ? currentFinancials.feesDisplay : 0;
+      const fees = parseFloat(currentFormData.fees) || 0;
       const takeProfit = parseFloat(currentFormData.takeProfit) || undefined;
       const stopLoss = parseFloat(currentFormData.stopLoss) || undefined;
       const finalTakeProfit = parseFloat(currentFormData.finalTakeProfit) || undefined;
@@ -455,8 +452,9 @@ const TradeDetail: React.FC<TradeDetailProps> = ({ trade, accounts, tagGroups, s
       delete updatedFormData.affectBalance;
 
       const main = parseFloat(updatedFormData.mainPnl) || 0;
+      const fees = parseFloat(updatedFormData.fees) || 0;
       const partialsTotal = (updatedFormData.partials || []).reduce((acc: number, p: TradePartial) => acc + (p.pnl || 0), 0);
-      const net = main + partialsTotal;
+      const net = main + partialsTotal - fees;
       
       let status = TradeStatus.BREAK_EVEN;
       if (net > 0) status = TradeStatus.WIN;
@@ -482,7 +480,7 @@ const TradeDetail: React.FC<TradeDetailProps> = ({ trade, accounts, tagGroups, s
         entryPrice: parseFloat(updatedFormData.entryPrice),
         exitPrice: updatedFormData.exitPrice ? parseFloat(updatedFormData.exitPrice) : undefined,
         quantity: parseFloat(updatedFormData.quantity),
-        fees: typeof calculatedFinancials.feesDisplay === 'number' ? calculatedFinancials.feesDisplay : 0, 
+        fees: fees, 
         takeProfit: updatedFormData.takeProfit ? parseFloat(updatedFormData.takeProfit) : undefined,
         stopLoss: updatedFormData.stopLoss ? parseFloat(updatedFormData.stopLoss) : undefined,
         finalTakeProfit: updatedFormData.finalTakeProfit ? parseFloat(updatedFormData.finalTakeProfit) : undefined,
@@ -880,9 +878,18 @@ const TradeDetail: React.FC<TradeDetailProps> = ({ trade, accounts, tagGroups, s
                               <div className="text-sm font-bold text-textMain py-1.5">${calculatedFinancials.partialsTotal.toFixed(2)}</div>
                           </div>
                           <div>
-                              <label className="text-[10px] uppercase text-textMuted mb-1 block">Fees (Calc)</label>
-                              <div className={`text-sm font-medium py-1.5 ${typeof calculatedFinancials.feesDisplay === 'number' ? 'text-loss' : 'text-textMuted'}`}>
-                                  {typeof calculatedFinancials.feesDisplay === 'number' ? `$${calculatedFinancials.feesDisplay.toFixed(2)}` : calculatedFinancials.feesDisplay}
+                              <label className="text-[10px] uppercase text-textMuted mb-1 block">Fees</label>
+                              <div className="relative">
+                                <span className="absolute left-0 top-1/2 -translate-y-1/2 text-xs text-textMuted">$</span>
+                                <input 
+                                    type="number" 
+                                    step="any"
+                                    value={formData.fees}
+                                    onChange={(e) => handleChange('fees', e.target.value)}
+                                    className={`w-full bg-transparent text-center text-sm font-bold text-textMain focus:outline-none border-b border-border/30 hover:border-border ${isClosed || isMissed ? 'opacity-50 cursor-not-allowed' : ''}`}
+                                    placeholder="0.00"
+                                    disabled={isClosed || isMissed}
+                                />
                               </div>
                           </div>
                       </div>

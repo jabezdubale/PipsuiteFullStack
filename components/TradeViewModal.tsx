@@ -108,8 +108,9 @@ const TradeViewModal: React.FC<TradeViewModalProps> = ({ trade, account, onClose
 
       // 2. Calculate final stats
       const main = parseFloat(updatedTradeData.mainPnl) || 0;
+      const fees = parseFloat(updatedTradeData.fees) || 0;
       const partialsTotal = (updatedTradeData.partials || []).reduce((acc: number, p: TradePartial) => acc + (p.pnl || 0), 0);
-      const net = main + partialsTotal;
+      const net = main + partialsTotal - fees;
       
       let status = TradeStatus.BREAK_EVEN;
       if (net > 0) status = TradeStatus.WIN;
@@ -126,7 +127,7 @@ const TradeViewModal: React.FC<TradeViewModalProps> = ({ trade, account, onClose
         entryPrice: parseFloat(updatedTradeData.entryPrice),
         exitPrice: parseFloat(updatedTradeData.exitPrice),
         quantity: parseFloat(updatedTradeData.quantity),
-        fees: parseFloat(updatedTradeData.fees) || 0,
+        fees: fees,
         mainPnl: parseFloat(updatedTradeData.mainPnl)
       };
 

@@ -54,14 +54,25 @@ const getFxMetaData = async (quoteCurrency: string): Promise<{ rate: number, pai
         isDirect = false;
     }
 
+    // TwelveData expects format "XXX/YYY" for forex pairs
+    let querySymbol = pair;
+    if (pair.length === 6) {
+        querySymbol = `${pair.slice(0, 3)}/${pair.slice(3)}`;
+    }
+
     try {
-        const res = await fetch(`https://api.twelvedata.com/price?symbol=${pair}&apikey=${apiKey}`);
+        const res = await fetch(`https://api.twelvedata.com/price?symbol=${querySymbol}&apikey=${apiKey}`);
         if (!res.ok) return null;
         
         const data = await res.json();
         
+        if (data.status === 'error' || data.code) {
+            console.warn(`FX fetch error for ${querySymbol}:`, data.message || 'Unknown API error');
+            return null;
+        }
+
         if (!data.price) {
-            console.warn(`FX fetch error for ${pair}:`, data.message || 'No price data');
+            console.warn(`FX fetch error for ${querySymbol}:`, data.message || 'No price data');
             return null;
         }
 
@@ -74,9 +85,9 @@ const getFxMetaData = async (quoteCurrency: string): Promise<{ rate: number, pai
         const rate = isDirect ? price : (1 / price);
 
         // Cache result
-        rateCache[code] = { rate, pair, timestamp: Date.now() };
+        rateCache[code] = { rate, pair: querySymbol, timestamp: Date.now() };
         
-        return { rate, pair };
+        return { rate, pair: querySymbol };
 
     } catch (e) {
         console.error("FX Service Network Error", e);

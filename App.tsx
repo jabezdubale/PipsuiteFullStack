@@ -58,6 +58,10 @@ function App() {
   const [isUserModalOpen, setIsUserModalOpen] = useState(false); 
   const [editingUser, setEditingUser] = useState<User | null>(null); 
 
+  // Asset Change Confirmation State
+  const [pendingSymbol, setPendingSymbol] = useState<string | null>(null);
+  const [isAssetChangeConfirmOpen, setIsAssetChangeConfirmOpen] = useState(false);
+
   // Delete Confirmation State
   const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
   const [tradesToDelete, setTradesToDelete] = useState<string[]>([]);
@@ -78,9 +82,12 @@ function App() {
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [isUploading, setIsUploading] = useState(false);
   
-  const [newTradeForm, setNewTradeForm] = useState<any>({ symbol: 'XAUUSD', screenshots: [], tags: [], setup: '' });
+  const [newTradeForm, setNewTradeForm] = useState<any>({ symbol: '', screenshots: [], tags: [], setup: '' });
   const [newImageUrl, setNewImageUrl] = useState('');
   const [fxRate, setFxRate] = useState<number | null>(null);
+  
+  // Sizing Field State (Prevents fighting between inputs)
+  const [activeSizingField, setActiveSizingField] = useState<'quantity' | 'riskPercentage' | null>(null);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
   const analysisFileInputRef = useRef<HTMLInputElement>(null);
@@ -250,10 +257,68 @@ function App() {
     if (isAddModalOpen && selectedAccountId) {
       const acc = accounts.find(a => a.id === selectedAccountId);
       if (acc) {
-        setNewTradeForm((prev: any) => ({ ...prev, balance: acc.balance, symbol: prev.symbol || 'XAUUSD' }));
+        setNewTradeForm((prev: any) => ({ ...prev, balance: acc.balance }));
       }
     }
   }, [isAddModalOpen, selectedAccountId, accounts]);
+
+  // Asset Select Handler with Confirmation
+  const handleAssetSelect = (e: React.ChangeEvent<HTMLSelectElement>) => {
+      const newSymbol = e.target.value;
+      // If no symbol currently selected, just set it
+      if (!newTradeForm.symbol) {
+          setNewTradeForm((prev: any) => ({ ...prev, symbol: newSymbol }));
+      } else {
+          // Changing existing symbol - request confirmation
+          setPendingSymbol(newSymbol);
+          setIsAssetChangeConfirmOpen(true);
+      }
+  };
+
+  const confirmAssetChange = async () => {
+      if (!pendingSymbol) return;
+
+      setIsUploading(true); // reuse upload loading state for convenience
+      
+      // 1. Clean up existing screenshots from blob
+      if (newTradeForm.screenshots && newTradeForm.screenshots.length > 0) {
+          try {
+              await deleteBlobImages(newTradeForm.screenshots);
+          } catch (e) {
+              console.error("Failed to cleanup blobs during asset switch", e);
+          }
+      }
+
+      // 2. Clear all fields and set new symbol
+      setNewTradeForm((prev: any) => ({
+          symbol: pendingSymbol,
+          screenshots: [],
+          tags: [],
+          setup: '',
+          notes: '',
+          emotionalNotes: '',
+          entryPrice: '',
+          exitPrice: '',
+          takeProfit: '',
+          stopLoss: '',
+          quantity: '',
+          riskPercentage: '',
+          leverage: '',
+          currentPrice: '',
+          balance: prev.balance // Keep balance
+      }));
+      setNewImageUrl('');
+
+      // 3. Close modal
+      setPendingSymbol(null);
+      setIsAssetChangeConfirmOpen(false);
+      setIsUploading(false);
+  };
+
+  const cancelAssetChange = () => {
+      setPendingSymbol(null);
+      setIsAssetChangeConfirmOpen(false);
+  };
 
   // Paste Listener for Add Modal
   useEffect(() => {
@@ -820,7 +885,7 @@ function App() {
     };
 
     handleSaveTrade(newTrade);
-    setNewTradeForm({ symbol: 'XAUUSD', screenshots: [], tags: [], setup: '' });
+    setNewTradeForm({ symbol: '', screenshots: [], tags: [], setup: '' });
   };
 
   const handleClearForm = () => {
@@ -857,43 +922,78 @@ function App() {
       return !!(newTradeForm.symbol && newTradeForm.entryPrice && (newTradeForm.stopLoss || newTradeForm.takeProfit));
   }, [newTradeForm.symbol, newTradeForm.entryPrice, newTradeForm.stopLoss, newTradeForm.takeProfit]);
 
+  // Calculate effective quantity for metrics
+  const effectiveQuantity = useMemo(() => {
+      // If user is editing Risk %, calculate implied lots for the metrics
+      if (activeSizingField === 'riskPercentage') {
+          const entry = parseFloat(newTradeForm.entryPrice);
+          const sl = parseFloat(newTradeForm.stopLoss);
+          const balance = parseFloat(newTradeForm.balance);
+          const pct = parseFloat(newTradeForm.riskPercentage);
+          
+          // Need fxRate to convert
+          if (!isNaN(entry) && !isNaN(sl) && !isNaN(balance) && !isNaN(pct) && fxRate !== null && fxRate > 0) {
+              const lots = calculateQuantity(entry, sl, pct, newTradeForm.symbol, balance, fxRate);
+              return lots;
+          }
+          return 0;
+      }
+      // Otherwise use the form's quantity (user is editing lots, or neither)
+      return parseFloat(newTradeForm.quantity) || 0;
+  }, [activeSizingField, newTradeForm.entryPrice, newTradeForm.stopLoss, newTradeForm.balance, newTradeForm.riskPercentage, newTradeForm.quantity, newTradeForm.symbol, fxRate]);
+
   // Use Centralized Calculator
   const metrics = useMemo(() => {
-      return computeTradeMetrics(newTradeForm, fxRate);
-  }, [newTradeForm, fxRate]);
+      // Create a transient form object for calculation
+      // We overwrite quantity with the effective one so metrics (Risk $, Reward $) reflect the active input
+      const calculationForm = { 
+          ...newTradeForm, 
+          quantity: activeSizingField === 'riskPercentage' ? effectiveQuantity.toString() : newTradeForm.quantity 
+      };
+      return computeTradeMetrics(calculationForm, fxRate);
+  }, [newTradeForm, fxRate, activeSizingField, effectiveQuantity]);
 
+  // Handler for Lot Size Input Change (Just update state)
   const handleLotSizeChange = (val: string) => {
-    setNewTradeForm(prev => {
-        const updated = { ...prev, quantity: val };
-        // Reverse Calc: Update Risk %
-        const entry = parseFloat(prev.entryPrice);
-        const sl = parseFloat(prev.stopLoss);
-        const balance = parseFloat(prev.balance);
-        const lots = parseFloat(val);
-        
-        if (!isNaN(entry) && !isNaN(sl) && !isNaN(balance) && !isNaN(lots) && fxRate !== null && fxRate > 0) {
-            const pct = calculateRiskPercentage(entry, sl, lots, prev.symbol, balance, fxRate);
-            if (pct > 0) updated.riskPercentage = pct.toFixed(2);
-        }
-        return updated;
-    });
+    setNewTradeForm((prev: any) => ({ ...prev, quantity: val }));
   };
 
-  const handleRiskPctChange = (val: string) => {
-    setNewTradeForm(prev => {
-        const updated = { ...prev, riskPercentage: val };
-        // Reverse Calc: Update Lots
-        const entry = parseFloat(prev.entryPrice);
-        const sl = parseFloat(prev.stopLoss);
-        const balance = parseFloat(prev.balance);
-        const pct = parseFloat(val);
-        
-        if (!isNaN(entry) && !isNaN(sl) && !isNaN(balance) && !isNaN(pct) && fxRate !== null && fxRate > 0) {
-            const lots = calculateQuantity(entry, sl, pct, prev.symbol, balance, fxRate);
-            if (lots > 0) updated.quantity = lots.toFixed(4);
+  // Handler for Lot Size Blur (Sync Risk %)
+  const handleLotSizeBlur = () => {
+    setActiveSizingField(null);
+    const entry = parseFloat(newTradeForm.entryPrice);
+    const sl = parseFloat(newTradeForm.stopLoss);
+    const balance = parseFloat(newTradeForm.balance);
+    const lots = parseFloat(newTradeForm.quantity);
+    
+    if (!isNaN(entry) && !isNaN(sl) && !isNaN(balance) && !isNaN(lots) && fxRate !== null && fxRate > 0) {
+        const pct = calculateRiskPercentage(entry, sl, lots, newTradeForm.symbol, balance, fxRate);
+        // Only update if we get a valid number
+        if (pct > 0) {
+            setNewTradeForm((prev: any) => ({ ...prev, riskPercentage: pct.toFixed(2) }));
         }
-        return updated;
-    });
+    }
+  };
+
+  // Handler for Risk % Input Change (Just update state)
+  const handleRiskPctChange = (val: string) => {
+    setNewTradeForm((prev: any) => ({ ...prev, riskPercentage: val }));
+  };
+
+  // Handler for Risk % Blur (Sync Lots)
+  const handleRiskPctBlur = () => {
+    setActiveSizingField(null);
+    const entry = parseFloat(newTradeForm.entryPrice);
+    const sl = parseFloat(newTradeForm.stopLoss);
+    const balance = parseFloat(newTradeForm.balance);
+    const pct = parseFloat(newTradeForm.riskPercentage);
+    
+    if (!isNaN(entry) && !isNaN(sl) && !isNaN(balance) && !isNaN(pct) && fxRate !== null && fxRate > 0) {
+        const lots = calculateQuantity(entry, sl, pct, newTradeForm.symbol, balance, fxRate);
+        if (lots > 0) {
+            setNewTradeForm((prev: any) => ({ ...prev, quantity: lots.toFixed(4) }));
+        }
+    }
   };
 
   const renderContent = () => {
@@ -1166,7 +1266,38 @@ function App() {
           />
       )}
 
-      {/* ... Add Trade Modal XML ... */}
+      {/* Asset Change Confirmation Modal */}
+      {isAssetChangeConfirmOpen && (
+        <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-[250] p-4 backdrop-blur-sm animate-in fade-in">
+            <div className="bg-surface border border-border rounded-xl w-full max-w-sm shadow-2xl p-6 text-center" onClick={(e) => e.stopPropagation()}>
+                <div className="w-12 h-12 bg-primary/10 text-primary rounded-full flex items-center justify-center mx-auto mb-4">
+                    <AlertTriangle size={24} />
+                </div>
+                <h3 className="text-lg font-bold text-textMain mb-2">Change Asset?</h3>
+                <p className="text-sm text-textMuted mb-6">
+                    Changing asset will clear all fields including screenshots and tags. Continue?
+                </p>
+                <div className="flex gap-3 justify-center">
+                    <button 
+                        onClick={cancelAssetChange}
+                        className="px-4 py-2 text-sm font-medium text-textMain bg-surface border border-border rounded-lg hover:bg-surfaceHighlight transition-colors"
+                    >
+                        Cancel
+                    </button>
+                    <button 
+                        onClick={confirmAssetChange}
+                        disabled={isUploading}
+                        className="px-4 py-2 text-sm font-bold text-white bg-primary hover:bg-blue-600 rounded-lg shadow-lg shadow-blue-500/20 transition-colors flex items-center gap-2"
+                    >
+                        {isUploading && <Loader2 size={14} className="animate-spin" />}
+                        Confirm
+                    </button>
+                </div>
+            </div>
+        </div>
+      )}
+
+      {/* Add Trade Modal */}
       {isAddModalOpen && (
         <div 
             className="fixed inset-0 bg-black/70 flex items-center justify-center z-[200] p-4 backdrop-blur-sm animate-in fade-in"
@@ -1238,12 +1369,12 @@ function App() {
                       <div className="relative">
                           <select
                               name="symbol"
-                              onChange={(e) => setNewTradeForm({...newTradeForm, symbol: e.target.value})}
+                              onChange={handleAssetSelect}
                               className="w-full bg-background border border-border rounded p-2 text-sm text-textMain uppercase appearance-none"
                               required
-                              value={newTradeForm.symbol || 'XAUUSD'}
+                              value={newTradeForm.symbol || ''}
                           >
-                              <option value="" disabled></option>
+                              <option value="" disabled>Select Asset</option>
                               {ASSETS.map(asset => (
                                   <option key={asset.id} value={asset.assetPair}>{asset.assetPair}</option>
                               ))}
@@ -1273,7 +1404,7 @@ function App() {
                                 onClick={(e) => { e.preventDefault(); fetchLatestPrice(newTradeForm.symbol); }}
                                 className={`px-3 bg-surfaceHighlight hover:bg-border border rounded text-primary transition-colors flex items-center justify-center ${priceError ? 'border-loss text-loss' : 'border-border'}`}
                                 title="Refresh Price"
-                                disabled={isFetchingPrice}
+                                disabled={isFetchingPrice || !newTradeForm.symbol}
                             >
                                 {isFetchingPrice ? <div className="w-4 h-4 border-2 border-primary border-t-transparent rounded-full animate-spin"></div> : <RefreshCw size={16} />}
                             </button>
@@ -1314,7 +1445,9 @@ function App() {
                           type="number" 
                           step="any" 
                           value={newTradeForm.quantity || ''}
-                          onChange={(e) => handleLotSizeChange(e.target.value)} 
+                          onChange={(e) => handleLotSizeChange(e.target.value)}
+                          onFocus={() => setActiveSizingField('quantity')}
+                          onBlur={handleLotSizeBlur}
                           className={`w-full bg-background border border-border rounded p-2 text-sm text-textMain ${!canCalculateRisk ? 'opacity-50 cursor-not-allowed' : ''}`}
                           disabled={!canCalculateRisk}
                           required 
@@ -1327,6 +1460,8 @@ function App() {
                           step="any" 
                           value={newTradeForm.riskPercentage || ''}
                           onChange={(e) => handleRiskPctChange(e.target.value)} 
+                          onFocus={() => setActiveSizingField('riskPercentage')}
+                          onBlur={handleRiskPctBlur}
                           className={`w-full bg-background border border-border rounded p-2 text-sm text-textMain ${!canCalculateRisk ? 'opacity-50 cursor-not-allowed' : ''}`}
                           disabled={!canCalculateRisk}
                         />

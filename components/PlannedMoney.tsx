@@ -13,20 +13,25 @@ const PlannedMoney: React.FC<PlannedMoneyProps> = ({ quoteAmount, quoteCurrency,
     const [usdAmount, setUsdAmount] = useState<number | null>(null);
 
     useEffect(() => {
+        let cancelled = false;
+        
+        // Reset immediately to prevent stale values from previous props
+        setUsdAmount(null);
+
         if (quoteCurrency === 'USD') {
             setUsdAmount(quoteAmount);
             return;
         }
         
-        let mounted = true;
         // Fetch rate from service (uses cache internally)
         getFxRateToUSD(quoteCurrency).then(rate => {
-            if (mounted && rate !== null) {
+            if (cancelled) return;
+            if (rate !== null) {
                 setUsdAmount(quoteAmount * rate);
             }
         });
         
-        return () => { mounted = false; };
+        return () => { cancelled = true; };
     }, [quoteAmount, quoteCurrency]);
 
     // Case 1: USD Base (e.g. EURUSD) or Explicit override

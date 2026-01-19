@@ -1,7 +1,7 @@
 
 import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { Trade, TradeType, TradeStatus, AVAILABLE_COLUMNS, ColumnKey, ASSETS, TradeOutcome, OrderType, Session, TagGroup } from '../types';
-import { Trash2, Settings, Eye, X, ChevronLeft, ChevronRight, Check, Download, Upload, GripVertical, MousePointer2, CheckSquare, RotateCcw, ChevronDown, ChevronUp, Filter, Loader2 } from 'lucide-react';
+import { Trash2, Settings, Eye, X, ChevronLeft, ChevronRight, Check, Download, Upload, GripVertical, MousePointer2, CheckSquare, RotateCcw, ChevronDown, ChevronUp, Filter, Loader2, FilterX } from 'lucide-react';
 import { calculateAutoTags } from '../utils/autoTagLogic';
 import { generateId } from '../utils/idUtils';
 import { getSetting, saveSetting } from '../services/storageService';
@@ -264,6 +264,14 @@ const TradeList: React.FC<TradeListProps> = ({ trades, selectedAccountId, onTrad
           delete copy[key];
           return copy;
       });
+      setOpenFilterColumn(null);
+  };
+
+  // --- Clear All Filters ---
+  const hasActiveFilters = Object.keys(activeFilters).length > 0;
+
+  const handleClearAllFilters = () => {
+      setActiveFilters({});
       setOpenFilterColumn(null);
   };
 
@@ -714,9 +722,7 @@ const TradeList: React.FC<TradeListProps> = ({ trades, selectedAccountId, onTrad
     }
   };
 
-  // --- Render Header with Filter logic omitted for brevity as it's largely static/repetitive structure ...
   const renderHeader = (colKey: string, label: string, isFixed: boolean = false) => {
-      // Re-using same logic as previous version, ensuring full functionality
       const filterType = getFilterType(colKey);
       const isOpen = openFilterColumn === colKey;
       const isActive = isFilterActive(colKey);
@@ -737,11 +743,9 @@ const TradeList: React.FC<TradeListProps> = ({ trades, selectedAccountId, onTrad
                       >
                           <ChevronDown size={12} />
                       </button>
-                      {/* Dropdown implementation same as before */}
                       {isOpen && (
                           <div ref={filterDropdownRef} className="absolute top-full right-0 mt-1 w-60 bg-surface border border-border rounded-lg shadow-xl z-50 p-3 animate-in fade-in zoom-in-95 origin-top-right cursor-default" onClick={(e) => e.stopPropagation()}>
                               <div className="text-xs font-bold mb-2 text-textMain flex justify-between items-center">Filter {label} {isActive && <span className="text-[10px] text-primary">Active</span>}</div>
-                              {/* Filter Types Implementation */}
                               {filterType === 'select' && (
                                   <div className="max-h-48 overflow-y-auto space-y-1">
                                       {getUniqueColumnValues(colKey).map(val => (
@@ -765,6 +769,31 @@ const TradeList: React.FC<TradeListProps> = ({ trades, selectedAccountId, onTrad
                                       <input type="datetime-local" className="w-full bg-background border border-border rounded px-2 py-1 text-xs text-textMain" value={currentFilter.dateFrom || ''} onChange={(e) => updateFilter(colKey, { type: 'date', dateFrom: e.target.value })} />
                                       <input type="datetime-local" className="w-full bg-background border border-border rounded px-2 py-1 text-xs text-textMain" value={currentFilter.dateTo || ''} onChange={(e) => updateFilter(colKey, { type: 'date', dateTo: e.target.value })} />
                                   </div>
+                              )}
+                              {filterType === 'tags' && (
+                                <div className="space-y-2 max-h-60 overflow-y-auto">
+                                    <div className="flex gap-2 mb-2 p-1 bg-surfaceHighlight/50 rounded">
+                                        <button onClick={() => updateFilter(colKey, { type: 'tags', tagMatchMode: 'any' })} className={`flex-1 py-1 text-[10px] rounded ${currentFilter.tagMatchMode !== 'all' ? 'bg-primary text-white shadow-sm' : 'text-textMuted hover:text-textMain'}`}>Match Any</button>
+                                        <button onClick={() => updateFilter(colKey, { type: 'tags', tagMatchMode: 'all' })} className={`flex-1 py-1 text-[10px] rounded ${currentFilter.tagMatchMode === 'all' ? 'bg-primary text-white shadow-sm' : 'text-textMuted hover:text-textMain'}`}>Match All</button>
+                                    </div>
+                                    {tagGroups.map(group => (
+                                        <div key={group.name} className="border border-border/50 rounded overflow-hidden">
+                                            <button onClick={() => toggleFilterTagGroup(group.name)} className="w-full flex justify-between items-center p-1.5 bg-surfaceHighlight/30 hover:bg-surfaceHighlight/50 text-[10px] font-bold text-textMuted uppercase tracking-wider">
+                                                {group.name} {expandedFilterTagGroups.has(group.name) ? <ChevronUp size={10}/> : <ChevronDown size={10}/>}
+                                            </button>
+                                            {expandedFilterTagGroups.has(group.name) && (
+                                                <div className="p-1.5 space-y-1">
+                                                    {group.tags.map(tag => (
+                                                        <label key={tag} className="flex items-center gap-2 hover:bg-surfaceHighlight rounded px-1 py-0.5 cursor-pointer">
+                                                            <input type="checkbox" checked={currentFilter.selectedTags?.includes(tag) || false} onChange={(e) => { const selected = currentFilter.selectedTags || []; e.target.checked ? updateFilter(colKey, { type: 'tags', selectedTags: [...selected, tag] }) : updateFilter(colKey, { type: 'tags', selectedTags: selected.filter(t => t !== tag) }); }} className="rounded border-border text-primary focus:ring-primary" />
+                                                            <span className="text-xs text-textMain truncate" title={tag}>{tag}</span>
+                                                        </label>
+                                                    ))}
+                                                </div>
+                                            )}
+                                        </div>
+                                    ))}
+                                </div>
                               )}
                               <div className="mt-3 pt-3 border-t border-border flex justify-end">
                                   <button className="text-xs text-textMuted hover:text-loss transition-colors" onClick={(e) => { e.stopPropagation(); clearFilter(colKey); }}>Clear Filter</button>
@@ -793,10 +822,17 @@ const TradeList: React.FC<TradeListProps> = ({ trades, selectedAccountId, onTrad
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 shrink-0">
         <div className="flex items-center gap-3">
             <h2 className="text-xl font-bold text-textMain">{isTrash ? 'Trash Bin' : 'Trade Journal'}</h2>
-            {/* Filter tags logic */}
+            {hasActiveFilters && (
+                <button 
+                    onClick={handleClearAllFilters}
+                    className="flex items-center gap-1.5 px-3 py-1.5 bg-surface border border-border rounded-lg text-xs font-medium text-textMuted hover:text-textMain hover:bg-surfaceHighlight transition-colors animate-in fade-in"
+                    title="Reset all column filters"
+                >
+                    <FilterX size={14} /> Clear Filters
+                </button>
+            )}
         </div>
         <div className="flex gap-2 w-full sm:w-auto items-center">
-          {/* Actions logic (Select, Import, Export, Columns) */}
           {isSelectionMode ? (
               <div className="flex items-center gap-2 bg-surfaceHighlight/50 p-1 rounded-lg border border-primary/30 animate-in fade-in slide-in-from-right-2">
                  <button 
@@ -848,7 +884,6 @@ const TradeList: React.FC<TradeListProps> = ({ trades, selectedAccountId, onTrad
                  </button>
               </div>
           ) : (
-              // Standard Actions
               <div className="flex gap-2 mr-auto sm:mr-0 order-2 sm:order-1">
                 <button 
                     onClick={() => setIsSelectionMode(true)}
@@ -891,7 +926,6 @@ const TradeList: React.FC<TradeListProps> = ({ trades, selectedAccountId, onTrad
       </div>
 
       <div className="bg-surface border border-border rounded-xl overflow-hidden shadow-sm flex flex-col">
-        {/* ... Table render logic remains same ... */}
         <div className={`overflow-auto transition-all duration-200 ${openFilterColumn ? 'min-h-[350px]' : ''}`} style={{ maxHeight: 'calc(100vh - 280px)' }}>
           <table className="min-w-full text-left text-sm border-collapse">
             <thead className="bg-surfaceHighlight text-textMuted border-b border-border">
@@ -927,7 +961,6 @@ const TradeList: React.FC<TradeListProps> = ({ trades, selectedAccountId, onTrad
           </table>
         </div>
         
-        {/* ... Pagination logic remains same ... */}
         <div className="p-3 border-t border-border bg-surface flex flex-col sm:flex-row justify-between items-center gap-4 text-xs shrink-0">
            <div className="flex items-center gap-4"><span className="text-textMuted hidden sm:inline">Showing {Math.min(startIndex + 1, filteredTrades.length)} - {Math.min(startIndex + itemsPerPage, filteredTrades.length)} of {filteredTrades.length} trades</span>
               <div className="flex items-center gap-2"><span className="text-textMuted">Rows:</span><input type="number" min="5" value={itemsPerPageInput} onChange={handleItemsPerPageChange} onBlur={applyItemsPerPage} onKeyDown={handleItemsPerPageKeyDown} className="w-12 bg-surfaceHighlight border border-border rounded px-1.5 py-1 text-center focus:outline-none focus:border-primary" /></div>

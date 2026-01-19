@@ -92,14 +92,32 @@ const TradeList: React.FC<TradeListProps> = ({ trades, selectedAccountId, onTrad
          return risk === 0 ? 0 : reward / risk;
       }
       if (key === 'plannedReward') {
-          // Use stored values if available to prevent calculation
-          if (trade.plannedRewardQuote !== undefined && trade.plannedRewardQuote !== null) {
-              return trade.plannedRewardQuote;
+          // 1. Strict USD Preference for filtering
+          if (trade.plannedRewardUsd !== undefined && trade.plannedRewardUsd !== null) {
+              return trade.plannedRewardUsd;
           }
-          const asset = ASSETS.find(a => a.assetPair === trade.symbol);
-          if (!asset || !trade.entryPrice || !trade.takeProfit || !trade.quantity) return 0;
-          const dist = Math.abs(trade.takeProfit - trade.entryPrice);
-          return dist * asset.contractSize * trade.quantity;
+
+          // 2. Fallback: If Quote Currency is USD, the Quote Amount IS the USD Amount.
+          let isUsdQuote = trade.quoteCurrency === 'USD';
+          if (!trade.quoteCurrency) {
+              const info = getBaseQuote(trade.symbol);
+              if (info && info.quote === 'USD') isUsdQuote = true;
+          }
+
+          if (isUsdQuote) {
+              // Use stored quote value if available
+              if (trade.plannedRewardQuote !== undefined && trade.plannedRewardQuote !== null) {
+                  return trade.plannedRewardQuote;
+              }
+              // Fallback calculation for legacy USD trades
+              const asset = ASSETS.find(a => a.assetPair === trade.symbol);
+              if (!asset || !trade.entryPrice || !trade.takeProfit || !trade.quantity) return 0;
+              const dist = Math.abs(trade.takeProfit - trade.entryPrice);
+              return dist * asset.contractSize * trade.quantity;
+          }
+
+          // If non-USD pair and no USD conversion stored, return null to exclude from filter to prevent misleading comparisons
+          return null;
       }
       if (key === 'partialsCount') return trade.partials ? trade.partials.length : 0;
       if (key === 'partialProfit') return (trade.partials || []).reduce((acc, p) => acc + (p.pnl || 0), 0);
@@ -155,6 +173,9 @@ const TradeList: React.FC<TradeListProps> = ({ trades, selectedAccountId, onTrad
                 const filterVal = filter.numberValue ? parseFloat(filter.numberValue) : NaN;
                 if (isNaN(filterVal)) continue;
                 
+                // Explicitly fail if value is not a number (e.g. null from getCellValue)
+                if (isNaN(numVal)) return false;
+
                 const op = filter.operator || '>';
 
                 switch(op) {
@@ -192,9 +213,15 @@ const TradeList: React.FC<TradeListProps> = ({ trades, selectedAccountId, onTrad
         return true;
     });
 
+    const safeTime = (value: string | undefined): number | null => {
+        if (!value) return null;
+        const t = new Date(value).getTime();
+        return Number.isFinite(t) ? t : null;
+    };
+
     return filtered.sort((a, b) => {
-        const dateA = new Date(a.createdAt || a.entryDate).getTime();
-        const dateB = new Date(b.createdAt || b.entryDate).getTime();
+        const dateA = safeTime(a.createdAt) ?? safeTime(a.entryDate) ?? 0;
+        const dateB = safeTime(b.createdAt) ?? safeTime(b.entryDate) ?? 0;
         return dateB - dateA;
     });
   }, [trades, activeFilters]);

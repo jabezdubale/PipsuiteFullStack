@@ -1,8 +1,18 @@
 
+import { ASSETS } from '../types';
+
 export const getBaseQuote = (symbol: string): { base: string; quote: string } | null => {
   if (!symbol) return null;
   
   const s = symbol.toUpperCase().trim();
+
+  // 1. Check strict definition in ASSETS (Source of Truth)
+  const known = ASSETS.find(a => a.assetPair === s);
+  if (known) {
+      return { base: known.base, quote: known.quote };
+  }
+
+  // 2. Fallback Heuristics for unknown symbols
 
   // Handle standard 6-character pairs (Forex, Metals, some Crypto)
   // e.g. EURUSD, USDJPY, XAUUSD, BTCUSD

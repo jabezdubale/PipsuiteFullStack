@@ -185,6 +185,8 @@ export interface Asset {
   contractSize: number;
   pip: number;
   tick: number;
+  base: string;
+  quote: string;
 }
 
 export const ASSETS: Asset[] = [
@@ -193,216 +195,278 @@ export const ASSETS: Asset[] = [
     "assetPair": "XAUUSD",
     "contractSize": 100,
     "pip": 0.1,
-    "tick": 0.01
+    "tick": 0.01,
+    "base": "XAU",
+    "quote": "USD"
   },
   {
     "id": "2",
     "assetPair": "EURUSD",
     "contractSize": 100000,
     "pip": 0.0001,
-    "tick": 0.00001
+    "tick": 0.00001,
+    "base": "EUR",
+    "quote": "USD"
   },
   {
     "id": "3",
     "assetPair": "USDJPY",
     "contractSize": 100000,
     "pip": 0.01,
-    "tick": 0.001
+    "tick": 0.001,
+    "base": "USD",
+    "quote": "JPY"
   },
   {
     "id": "4",
     "assetPair": "GBPUSD",
     "contractSize": 100000,
     "pip": 0.0001,
-    "tick": 0.00001
+    "tick": 0.00001,
+    "base": "GBP",
+    "quote": "USD"
   },
   {
     "id": "5",
     "assetPair": "AUDUSD",
     "contractSize": 100000,
     "pip": 0.0001,
-    "tick": 0.00001
+    "tick": 0.00001,
+    "base": "AUD",
+    "quote": "USD"
   },
   {
     "id": "6",
     "assetPair": "NZDUSD",
     "contractSize": 100000,
     "pip": 0.0001,
-    "tick": 0.00001
+    "tick": 0.00001,
+    "base": "NZD",
+    "quote": "USD"
   },
   {
     "id": "7",
     "assetPair": "USDCAD",
     "contractSize": 100000,
     "pip": 0.0001,
-    "tick": 0.00001
+    "tick": 0.00001,
+    "base": "USD",
+    "quote": "CAD"
   },
   {
     "id": "8",
     "assetPair": "USDCHF",
     "contractSize": 100000,
     "pip": 0.0001,
-    "tick": 0.00001
+    "tick": 0.00001,
+    "base": "USD",
+    "quote": "CHF"
   },
   {
     "id": "9",
     "assetPair": "EURJPY",
     "contractSize": 100000,
     "pip": 0.01,
-    "tick": 0.001
+    "tick": 0.001,
+    "base": "EUR",
+    "quote": "JPY"
   },
   {
     "id": "10",
     "assetPair": "GBPJPY",
     "contractSize": 100000,
     "pip": 0.01,
-    "tick": 0.001
+    "tick": 0.001,
+    "base": "GBP",
+    "quote": "JPY"
   },
   {
     "id": "11",
     "assetPair": "EURAUD",
     "contractSize": 100000,
     "pip": 0.0001,
-    "tick": 0.00001
+    "tick": 0.00001,
+    "base": "EUR",
+    "quote": "AUD"
   },
   {
     "id": "12",
     "assetPair": "EURGBP",
     "contractSize": 100000,
     "pip": 0.0001,
-    "tick": 0.00001
+    "tick": 0.00001,
+    "base": "EUR",
+    "quote": "GBP"
   },
   {
     "id": "13",
     "assetPair": "AUDJPY",
     "contractSize": 100000,
     "pip": 0.01,
-    "tick": 0.001
+    "tick": 0.001,
+    "base": "AUD",
+    "quote": "JPY"
   },
   {
     "id": "14",
     "assetPair": "CADJPY",
     "contractSize": 100000,
     "pip": 0.01,
-    "tick": 0.001
+    "tick": 0.001,
+    "base": "CAD",
+    "quote": "JPY"
   },
   {
     "id": "15",
     "assetPair": "CHFJPY",
     "contractSize": 100000,
     "pip": 0.01,
-    "tick": 0.001
+    "tick": 0.001,
+    "base": "CHF",
+    "quote": "JPY"
   },
   {
     "id": "16",
     "assetPair": "USOIL",
     "contractSize": 1000,
     "pip": 0.01,
-    "tick": 0.01
+    "tick": 0.01,
+    "base": "USOIL",
+    "quote": "USD"
   },
   {
     "id": "17",
     "assetPair": "UKOIL",
     "contractSize": 1000,
     "pip": 0.01,
-    "tick": 0.01
+    "tick": 0.01,
+    "base": "UKOIL",
+    "quote": "USD"
   },
   {
     "id": "18",
     "assetPair": "XAGUSD",
     "contractSize": 5000,
     "pip": 0.01,
-    "tick": 0.001
+    "tick": 0.001,
+    "base": "XAG",
+    "quote": "USD"
   },
   {
     "id": "19",
     "assetPair": "BTCUSD",
     "contractSize": 1,
     "pip": 0.01,
-    "tick": 0.01
+    "tick": 0.01,
+    "base": "BTC",
+    "quote": "USD"
   },
   {
     "id": "20",
     "assetPair": "ETHUSD",
     "contractSize": 1,
     "pip": 0.01,
-    "tick": 0.01
+    "tick": 0.01,
+    "base": "ETH",
+    "quote": "USD"
   },
   {
     "id": "21",
     "assetPair": "XRPUSD",
     "contractSize": 1,
     "pip": 0.0001,
-    "tick": 0.0001
+    "tick": 0.0001,
+    "base": "XRP",
+    "quote": "USD"
   },
   {
     "id": "22",
     "assetPair": "LTCUSD",
     "contractSize": 1,
     "pip": 0.01,
-    "tick": 0.01
+    "tick": 0.01,
+    "base": "LTC",
+    "quote": "USD"
   },
   {
     "id": "23",
     "assetPair": "ADAUSD",
     "contractSize": 1,
     "pip": 0.0001,
-    "tick": 0.0001
+    "tick": 0.0001,
+    "base": "ADA",
+    "quote": "USD"
   },
   {
     "id": "24",
     "assetPair": "SOLUSD",
     "contractSize": 1,
     "pip": 0.01,
-    "tick": 0.01
+    "tick": 0.01,
+    "base": "SOL",
+    "quote": "USD"
   },
   {
     "id": "25",
     "assetPair": "BNBUSD",
     "contractSize": 1,
     "pip": 0.01,
-    "tick": 0.01
+    "tick": 0.01,
+    "base": "BNB",
+    "quote": "USD"
   },
   {
     "id": "26",
     "assetPair": "US30",
     "contractSize": 1,
     "pip": 1,
-    "tick": 0.1
+    "tick": 0.1,
+    "base": "US30",
+    "quote": "USD"
   },
   {
     "id": "27",
     "assetPair": "NAS100",
     "contractSize": 1,
     "pip": 0.1,
-    "tick": 0.01
+    "tick": 0.01,
+    "base": "NAS100",
+    "quote": "USD"
   },
   {
     "id": "28",
     "assetPair": "SPX500",
     "contractSize": 1,
     "pip": 0.1,
-    "tick": 0.01
+    "tick": 0.01,
+    "base": "SPX500",
+    "quote": "USD"
   },
   {
     "id": "29",
     "assetPair": "GER30",
     "contractSize": 1,
     "pip": 0.1,
-    "tick": 0.01
+    "tick": 0.01,
+    "base": "GER30",
+    "quote": "EUR"
   },
   {
     "id": "30",
     "assetPair": "UK100",
     "contractSize": 1,
     "pip": 0.1,
-    "tick": 0.01
+    "tick": 0.01,
+    "base": "UK100",
+    "quote": "GBP"
   },
   {
     "id": "31",
     "assetPair": "JP225",
     "contractSize": 1,
     "pip": 1,
-    "tick": 0.1
+    "tick": 0.1,
+    "base": "JP225",
+    "quote": "JPY"
   }
 ];

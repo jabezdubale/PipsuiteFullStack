@@ -260,7 +260,13 @@ function App() {
     if (isAddModalOpen && selectedAccountId) {
       const acc = accounts.find(a => a.id === selectedAccountId);
       if (acc) {
-        setNewTradeForm((prev: any) => ({ ...prev, balance: acc.balance }));
+        setNewTradeForm((prev: any) => {
+            // Only update if balance is not currently set (fresh draft) to avoid overwriting manual edits
+            if (prev.balance === undefined || prev.balance === '' || prev.balance === null) {
+                return { ...prev, balance: acc.balance };
+            }
+            return prev;
+        });
       }
     }
   }, [isAddModalOpen, selectedAccountId, accounts]);
@@ -953,7 +959,7 @@ function App() {
     setNewTradeForm((prev: any) => ({
       symbol: prev.symbol,
       currentPrice: prev.currentPrice,
-      balance: prev.balance,
+      // Removed balance to allow reset on next open
       entryPrice: '',
       takeProfit: '',
       stopLoss: '',

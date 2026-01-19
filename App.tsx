@@ -91,6 +91,9 @@ function App() {
 
   const fileInputRef = useRef<HTMLInputElement>(null);
   const analysisFileInputRef = useRef<HTMLInputElement>(null);
+  
+  // Track previous balance to detect changes for sizing logic
+  const prevBalanceRef = useRef<string | number>(newTradeForm.balance);
 
   // Initial Data Load
   useEffect(() => {
@@ -460,18 +463,36 @@ function App() {
     }
   }, [isAddModalOpen, newTradeForm.symbol]);
 
-  // Sync Risk % when Balance or other parameters change (Quantity is master unless editing Risk %)
+  // Sync Risk % when Balance or other parameters change
+  // Quantity is master unless editing Risk %
+  // EXCEPTION: When Balance changes, preserve Risk % and recalc Quantity (Mode A)
   useEffect(() => {
       if (activeSizingField === 'riskPercentage') return; // Don't overwrite if user is explicitly editing Risk %
 
       const entry = parseFloat(newTradeForm.entryPrice);
       const sl = parseFloat(newTradeForm.stopLoss);
-      const balance = parseFloat(newTradeForm.balance);
+      const currentBalance = parseFloat(newTradeForm.balance);
       const lots = parseFloat(newTradeForm.quantity);
+      const riskPct = parseFloat(newTradeForm.riskPercentage);
       
-      // Ensure all params exist and are valid
-      if (!isNaN(entry) && !isNaN(sl) && !isNaN(balance) && !isNaN(lots) && balance > 0 && fxRate !== null) {
-           const pct = calculateRiskPercentage(entry, sl, lots, newTradeForm.symbol, balance, fxRate);
+      const prevBalance = parseFloat(String(prevBalanceRef.current));
+      
+      // Update ref for next comparison
+      prevBalanceRef.current = newTradeForm.balance;
+
+      const balanceChanged = !isNaN(currentBalance) && !isNaN(prevBalance) && Math.abs(currentBalance - prevBalance) > 0.001;
+      const isValidParams = !isNaN(entry) && !isNaN(sl) && !isNaN(currentBalance) && currentBalance > 0 && fxRate !== null;
+
+      // Mode A: Balance Changed -> Recalculate Quantity (Preserve Risk %)
+      if (balanceChanged && isValidParams && !isNaN(riskPct) && activeSizingField !== 'quantity') {
+           const newLots = calculateQuantity(entry, sl, riskPct, newTradeForm.symbol, currentBalance, fxRate);
+           if (newLots >= 0) {
+               setNewTradeForm((prev: any) => ({ ...prev, quantity: newLots.toFixed(4) }));
+           }
+      } 
+      // Mode B: Standard -> Recalculate Risk % (Preserve Quantity)
+      else if (isValidParams && !isNaN(lots)) {
+           const pct = calculateRiskPercentage(entry, sl, lots, newTradeForm.symbol, currentBalance, fxRate);
            if (pct !== 0) { 
                const newPct = pct.toFixed(2);
                // Only update if changed to avoid unnecessary renders
@@ -488,7 +509,7 @@ function App() {
       newTradeForm.symbol, 
       fxRate, 
       activeSizingField,
-      newTradeForm.riskPercentage // Needed for the inequality check
+      newTradeForm.riskPercentage
   ]);
 
   // Theme

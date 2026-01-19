@@ -7,6 +7,8 @@ import { calculateAutoTags } from '../utils/autoTagLogic';
 import { toLocalInputString } from '../utils/dateUtils';
 import { compressImage, addScreenshot } from '../utils/imageUtils';
 import { uploadImage, deleteBlobImages } from '../services/storageService';
+import { getBaseQuote } from '../utils/symbol';
+import PlannedMoney from './PlannedMoney';
 
 interface CloseTradeModalProps {
   currentData: any; // The current form data from TradeDetail
@@ -171,6 +173,11 @@ const CloseTradeModal: React.FC<CloseTradeModalProps> = ({ currentData, tagGroup
       }
       return 0;
   }, [currentData]);
+  
+  const quoteCurrency = useMemo(() => {
+      const info = getBaseQuote(currentData.symbol);
+      return info ? info.quote : 'USD';
+  }, [currentData.symbol]);
 
   // --- Helpers ---
   const handleDateTimeChange = (field: 'entry' | 'exit', value: string) => {
@@ -411,7 +418,7 @@ const CloseTradeModal: React.FC<CloseTradeModalProps> = ({ currentData, tagGroup
                                     <label className="block text-xs font-bold text-textMain">Core P&L</label>
                                     {plannedReward > 0 && (
                                         <span className="text-[10px] text-textMuted bg-surfaceHighlight/50 px-1.5 py-0.5 rounded border border-border/30">
-                                            Target: <span className="text-profit font-mono font-medium">${plannedReward.toFixed(2)}</span>
+                                            Target: <PlannedMoney quoteAmount={plannedReward} quoteCurrency={quoteCurrency} showUsdOnly={true} className="text-profit font-mono font-medium" />
                                         </span>
                                     )}
                                 </div>

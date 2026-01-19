@@ -3,6 +3,8 @@ import React, { useState } from 'react';
 import { Trade, TradeStatus, TradeType, Account, ASSETS, TradeOutcome, TagGroup, TradePartial } from '../types';
 import { X, Calendar, Clock, ArrowRight, Edit2, Trash2, Tag, Image as ImageIcon, TrendingUp, TrendingDown, DollarSign, Activity, Layers, Hash, Slash, CheckCircle } from 'lucide-react';
 import CloseTradeModal from './CloseTradeModal';
+import PlannedMoney from './PlannedMoney';
+import { getBaseQuote } from '../utils/symbol';
 
 interface TradeViewModalProps {
   trade: Trade;
@@ -94,6 +96,9 @@ const TradeViewModal: React.FC<TradeViewModalProps> = ({ trade, account, onClose
       const dist = Math.abs(trade.takeProfit - trade.entryPrice);
       plannedReward = dist * asset.contractSize * trade.quantity;
   }
+  
+  const quoteInfo = getBaseQuote(trade.symbol);
+  const quoteCurrency = quoteInfo ? quoteInfo.quote : 'USD';
 
   const handleCloseModalConfirm = (closedData: any) => {
       // 1. Prepare updated trade data based on closing details
@@ -286,7 +291,9 @@ const TradeViewModal: React.FC<TradeViewModalProps> = ({ trade, account, onClose
                             />
                             <DetailRow 
                                 label="Planned Reward" 
-                                value={plannedReward > 0 ? `$${plannedReward.toFixed(2)}` : '-'} 
+                                value={plannedReward > 0 ? (
+                                    <PlannedMoney quoteAmount={plannedReward} quoteCurrency={quoteCurrency} />
+                                ) : '-'} 
                             />
                             <DetailRow label="Fees" value={`$${trade.fees.toFixed(2)}`} />
                         </div>

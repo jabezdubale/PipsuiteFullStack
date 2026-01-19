@@ -6,6 +6,8 @@ import { calculateAutoTags } from '../utils/autoTagLogic';
 import { generateId } from '../utils/idUtils';
 import { getSetting, saveSetting } from '../services/storageService';
 import { exportTradesToCSV } from '../utils/csvExport';
+import { getBaseQuote } from '../utils/symbol';
+import PlannedMoney from './PlannedMoney';
 
 interface TradeListProps {
   trades: Trade[];
@@ -678,11 +680,19 @@ const TradeList: React.FC<TradeListProps> = ({ trades, selectedAccountId, onTrad
          return `1:${(reward / risk).toFixed(2)}`;
       }
       case 'plannedReward': {
+          const assetInfo = getBaseQuote(trade.symbol);
           const asset = ASSETS.find(a => a.assetPair === trade.symbol);
-          if (!asset || !trade.entryPrice || !trade.takeProfit || !trade.quantity) return '-';
+          if (!asset || !assetInfo || !trade.entryPrice || !trade.takeProfit || !trade.quantity) return '-';
+          
           const dist = Math.abs(trade.takeProfit - trade.entryPrice);
-          const reward = dist * asset.contractSize * trade.quantity;
-          return reward.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+          const rewardQuote = dist * asset.contractSize * trade.quantity;
+          
+          return (
+              <PlannedMoney 
+                  quoteAmount={rewardQuote} 
+                  quoteCurrency={assetInfo.quote} 
+              />
+          );
       }
       case 'partialsCount': return trade.partials ? trade.partials.length.toString() : '0';
       case 'screenshotsCount': return trade.screenshots ? trade.screenshots.length.toString() : '0';

@@ -9,6 +9,8 @@ import { toLocalInputString, formatDisplayDate } from '../utils/dateUtils';
 import { compressImage, addScreenshot } from '../utils/imageUtils';
 import { generateId } from '../utils/idUtils';
 import { uploadImage, deleteBlobImages } from '../services/storageService';
+import { getBaseQuote } from '../utils/symbol';
+import PlannedMoney from './PlannedMoney';
 
 const SectionHeader = ({ title }: { title: string }) => (
   <h3 className="text-xs font-bold text-primary uppercase tracking-wider mb-3">{title}</h3>
@@ -160,13 +162,17 @@ const TradeDetail: React.FC<TradeDetailProps> = ({ trade, accounts, tagGroups, s
          }
     }
     
+    const quoteInfo = getBaseQuote(formData.symbol);
+    const quoteCurrency = quoteInfo ? quoteInfo.quote : 'USD';
+
     return {
         partialsTotal,
         netPnlValue,
         netPnlDisplay,
         feesValue: feesVal,
         plannedReward,
-        rr
+        rr,
+        quoteCurrency
     };
   }, [formData, asset]);
   
@@ -820,7 +826,11 @@ const TradeDetail: React.FC<TradeDetailProps> = ({ trade, accounts, tagGroups, s
                           </InputGroup>
                           <InputGroup label="Planned Reward">
                               <div className="h-[34px] flex items-center px-2 text-sm font-medium border border-border/40 rounded-md text-textMain">
-                                  ${calculatedFinancials.plannedReward.toFixed(2)}
+                                  <PlannedMoney 
+                                      quoteAmount={calculatedFinancials.plannedReward} 
+                                      quoteCurrency={calculatedFinancials.quoteCurrency} 
+                                      className="text-sm font-medium" 
+                                  />
                               </div>
                           </InputGroup>
                       </div>

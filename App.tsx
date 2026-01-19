@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import Layout from './components/Layout';
 import Dashboard from './components/Dashboard';
@@ -467,7 +466,7 @@ function App() {
   // Quantity is master unless editing Risk %
   // EXCEPTION: When Balance changes, preserve Risk % and recalc Quantity (Mode A)
   useEffect(() => {
-      if (activeSizingField === 'riskPercentage') return; // Don't overwrite if user is explicitly editing Risk %
+      if (activeSizingField !== null) return;
 
       const entry = parseFloat(newTradeForm.entryPrice);
       const sl = parseFloat(newTradeForm.stopLoss);
@@ -484,7 +483,7 @@ function App() {
       const isValidParams = !isNaN(entry) && !isNaN(sl) && !isNaN(currentBalance) && currentBalance > 0 && fxRate !== null;
 
       // Mode A: Balance Changed -> Recalculate Quantity (Preserve Risk %)
-      if (balanceChanged && isValidParams && !isNaN(riskPct) && activeSizingField !== 'quantity') {
+      if (balanceChanged && isValidParams && !isNaN(riskPct)) {
            const newLots = calculateQuantity(entry, sl, riskPct, newTradeForm.symbol, currentBalance, fxRate);
            if (newLots >= 0) {
                setNewTradeForm((prev: any) => ({ ...prev, quantity: newLots.toFixed(4) }));

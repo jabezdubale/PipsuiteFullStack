@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import Layout from './components/Layout';
 import Dashboard from './components/Dashboard';
@@ -1571,7 +1572,7 @@ function App() {
                                       {metrics.quoteCurrency === 'USD' ? '$' : ''}{metrics.riskQuote.toFixed(2)}
                                   </div>
                                   {metrics.quoteCurrency !== 'USD' && metrics.riskUSD !== null && (
-                                      <div className="text-[9px] text-textMuted">${metrics.riskUSD.toFixed(2)}</div>
+                                      <div className="text-[11px] text-textMuted">${metrics.riskUSD.toFixed(2)}</div>
                                   )}
                               </div>
                               <div className="text-center">
@@ -1580,7 +1581,7 @@ function App() {
                                       {metrics.quoteCurrency === 'USD' ? '$' : ''}{metrics.rewardQuote.toFixed(2)}
                                   </div>
                                   {metrics.quoteCurrency !== 'USD' && metrics.rewardUSD !== null && (
-                                      <div className="text-[9px] text-textMuted">${metrics.rewardUSD.toFixed(2)}</div>
+                                      <div className="text-[11px] text-textMuted">${metrics.rewardUSD.toFixed(2)}</div>
                                   )}
                               </div>
                               <div className="text-right">
@@ -1596,7 +1597,7 @@ function App() {
                                       {metrics.quoteCurrency === 'USD' ? '$' : ''}{metrics.marginQuote.toFixed(2)}
                                   </span>
                                   {metrics.quoteCurrency !== 'USD' && metrics.marginUSD !== null && (
-                                      <span className="text-[9px] text-textMuted">${metrics.marginUSD.toFixed(2)}</span>
+                                      <span className="text-[11px] text-textMuted">${metrics.marginUSD.toFixed(2)}</span>
                                   )}
                               </div>
                           </div>

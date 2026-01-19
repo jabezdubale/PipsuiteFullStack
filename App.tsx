@@ -460,6 +460,37 @@ function App() {
     }
   }, [isAddModalOpen, newTradeForm.symbol]);
 
+  // Sync Risk % when Balance or other parameters change (Quantity is master unless editing Risk %)
+  useEffect(() => {
+      if (activeSizingField === 'riskPercentage') return; // Don't overwrite if user is explicitly editing Risk %
+
+      const entry = parseFloat(newTradeForm.entryPrice);
+      const sl = parseFloat(newTradeForm.stopLoss);
+      const balance = parseFloat(newTradeForm.balance);
+      const lots = parseFloat(newTradeForm.quantity);
+      
+      // Ensure all params exist and are valid
+      if (!isNaN(entry) && !isNaN(sl) && !isNaN(balance) && !isNaN(lots) && balance > 0 && fxRate !== null) {
+           const pct = calculateRiskPercentage(entry, sl, lots, newTradeForm.symbol, balance, fxRate);
+           if (pct !== 0) { 
+               const newPct = pct.toFixed(2);
+               // Only update if changed to avoid unnecessary renders
+               if (newTradeForm.riskPercentage !== newPct) {
+                   setNewTradeForm((prev: any) => ({ ...prev, riskPercentage: newPct }));
+               }
+           }
+      }
+  }, [
+      newTradeForm.entryPrice, 
+      newTradeForm.stopLoss, 
+      newTradeForm.balance, 
+      newTradeForm.quantity, 
+      newTradeForm.symbol, 
+      fxRate, 
+      activeSizingField,
+      newTradeForm.riskPercentage // Needed for the inequality check
+  ]);
+
   // Theme
   useEffect(() => {
     if (isDarkMode) {

@@ -956,10 +956,14 @@ function App() {
         }
     }
 
+    // Reset balance to the actual account balance immediately
+    const currentAccount = accounts.find(a => a.id === selectedAccountId);
+    const resetBalance = currentAccount ? currentAccount.balance : '';
+
     setNewTradeForm((prev: any) => ({
       symbol: prev.symbol,
       currentPrice: prev.currentPrice,
-      // Removed balance to allow reset on next open
+      balance: resetBalance,
       entryPrice: '',
       takeProfit: '',
       stopLoss: '',

@@ -728,6 +728,9 @@ const TradeList: React.FC<TradeListProps> = ({ trades, selectedAccountId, onTrad
       const isActive = isFilterActive(colKey);
       const currentFilter: Partial<ColumnFilterState> = activeFilters[colKey] || {};
 
+      // Determine dropdown alignment based on column
+      const dropdownAlign = colKey === 'symbol' ? 'left-0 origin-top-left' : 'right-0 origin-top-right';
+
       return (
           <div className="flex items-center justify-between gap-2 h-full">
               <div className="flex items-center gap-2">
@@ -744,7 +747,7 @@ const TradeList: React.FC<TradeListProps> = ({ trades, selectedAccountId, onTrad
                           <ChevronDown size={12} />
                       </button>
                       {isOpen && (
-                          <div ref={filterDropdownRef} className="absolute top-full right-0 mt-1 w-60 bg-surface border border-border rounded-lg shadow-xl z-50 p-3 animate-in fade-in zoom-in-95 origin-top-right cursor-default" onClick={(e) => e.stopPropagation()}>
+                          <div ref={filterDropdownRef} className={`absolute top-full ${dropdownAlign} mt-1 w-60 bg-surface border border-border rounded-lg shadow-xl z-50 p-3 animate-in fade-in zoom-in-95 cursor-default`} onClick={(e) => e.stopPropagation()}>
                               <div className="text-xs font-bold mb-2 text-textMain flex justify-between items-center">Filter {label} {isActive && <span className="text-[10px] text-primary">Active</span>}</div>
                               {filterType === 'select' && (
                                   <div className="max-h-48 overflow-y-auto space-y-1">

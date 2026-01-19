@@ -17,7 +17,7 @@ import { getTrades, saveTrade, deleteTrades, trashTrades, restoreTrades, getAcco
 import { fetchCurrentPrice, PriceResult } from './services/priceService';
 import { extractTradeParamsFromImage } from './services/geminiService';
 import { getFxRateToUSD } from './services/fxService';
-import { computeTradeMetrics, calculateRiskPercentage, calculateQuantity } from './utils/tradeCalc';
+import { computeTradeMetrics, calculateRiskPercentage, calculateQuantity, computePlannedValuesForSave } from './utils/tradeCalc';
 import { getBaseQuote } from './utils/symbol';
 import { Trade, TradeStats, Account, TradeType, TradeStatus, ASSETS, TagGroup, OrderType, Session, TradeOutcome, User } from './types';
 import { X, ChevronDown, Calculator, TrendingUp, TrendingDown, RefreshCw, Loader2, Upload, Plus, Trash2, Clipboard, ChevronUp, Eraser, User as UserIcon, Database, AlertTriangle } from 'lucide-react';
@@ -913,6 +913,9 @@ function App() {
     const now = new Date();
     const isoString = now.toISOString();
 
+    // Compute Planned Values for Save
+    const plannedValues = computePlannedValuesForSave(newTradeForm, fxRate);
+
     const newTrade: Trade = {
       id: generateId('trade'),
       accountId: selectedAccountId,
@@ -939,7 +942,9 @@ function App() {
       outcome: TradeOutcome.OPEN,
       screenshots: newTradeForm.screenshots || [],
       tags: newTradeForm.tags || [],
-      isDeleted: false
+      isDeleted: false,
+      // Add stored financial values
+      ...plannedValues
     };
 
     handleSaveTrade(newTrade);

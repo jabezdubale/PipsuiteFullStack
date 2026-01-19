@@ -7,15 +7,22 @@ interface PlannedMoneyProps {
     quoteCurrency: string;
     showUsdOnly?: boolean;
     className?: string;
+    precalculatedUsd?: number | null;
 }
 
-const PlannedMoney: React.FC<PlannedMoneyProps> = ({ quoteAmount, quoteCurrency, showUsdOnly, className = '' }) => {
+const PlannedMoney: React.FC<PlannedMoneyProps> = ({ quoteAmount, quoteCurrency, showUsdOnly, className = '', precalculatedUsd }) => {
     const [usdAmount, setUsdAmount] = useState<number | null>(null);
 
     useEffect(() => {
         let cancelled = false;
         
-        // Reset immediately to prevent stale values from previous props
+        // If we have a precalculated value, use it directly and skip fetch
+        if (precalculatedUsd !== undefined) {
+            setUsdAmount(precalculatedUsd);
+            return;
+        }
+
+        // Reset to null if no precalculated value provided (fetching state)
         setUsdAmount(null);
 
         if (quoteCurrency === 'USD') {
@@ -32,7 +39,7 @@ const PlannedMoney: React.FC<PlannedMoneyProps> = ({ quoteAmount, quoteCurrency,
         });
         
         return () => { cancelled = true; };
-    }, [quoteAmount, quoteCurrency]);
+    }, [quoteAmount, quoteCurrency, precalculatedUsd]);
 
     // Case 1: USD Base (e.g. EURUSD) or Explicit override
     if (quoteCurrency === 'USD') {

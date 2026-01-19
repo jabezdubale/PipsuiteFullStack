@@ -60,6 +60,15 @@ const parseTradeRow = (row) => {
     t.leverage = t.leverage ? parseFloat(t.leverage) : undefined;
     t.riskPercentage = t.riskPercentage ? parseFloat(t.riskPercentage) : undefined;
     t.balance = t.balance ? parseFloat(t.balance) : undefined;
+    
+    // New fields
+    t.quoteCurrency = row.quote_currency;
+    t.fxRateToUsd = row.fx_rate_to_usd ? parseFloat(row.fx_rate_to_usd) : undefined;
+    t.plannedRiskQuote = row.planned_risk_quote ? parseFloat(row.planned_risk_quote) : undefined;
+    t.plannedRewardQuote = row.planned_reward_quote ? parseFloat(row.planned_reward_quote) : undefined;
+    t.plannedRiskUsd = row.planned_risk_usd ? parseFloat(row.planned_risk_usd) : undefined;
+    t.plannedRewardUsd = row.planned_reward_usd ? parseFloat(row.planned_reward_usd) : undefined;
+
     return t;
 };
 
@@ -90,7 +99,10 @@ const mapTradeToParams = (t) => [
     safeJson(t.screenshots),
     safeJson(t.partials),
     t.isDeleted || false, t.deletedAt, t.isBalanceUpdated || false,
-    sanitizeNumber(t.finalStopLoss), sanitizeNumber(t.finalTakeProfit)
+    sanitizeNumber(t.finalStopLoss), sanitizeNumber(t.finalTakeProfit),
+    t.quoteCurrency || null, sanitizeNumber(t.fxRateToUsd),
+    sanitizeNumber(t.plannedRiskQuote), sanitizeNumber(t.plannedRewardQuote),
+    sanitizeNumber(t.plannedRiskUsd), sanitizeNumber(t.plannedRewardUsd)
 ];
 
 // --- Blob Cleanup Helper ---
@@ -242,7 +254,10 @@ const ensureSchema = async (db) => {
             "notes TEXT", "emotional_notes TEXT",
             "tags JSONB DEFAULT '[]'", "screenshots JSONB DEFAULT '[]'", "partials JSONB DEFAULT '[]'",
             "is_deleted BOOLEAN DEFAULT false", "deleted_at TIMESTAMP", "is_balance_updated BOOLEAN DEFAULT false",
-            "final_stop_loss DECIMAL(20, 5)", "final_take_profit DECIMAL(20, 5)"
+            "final_stop_loss DECIMAL(20, 5)", "final_take_profit DECIMAL(20, 5)",
+            "quote_currency VARCHAR(10)", "fx_rate_to_usd DECIMAL(20, 10)",
+            "planned_risk_quote DECIMAL(20, 2)", "planned_reward_quote DECIMAL(20, 2)",
+            "planned_risk_usd DECIMAL(20, 2)", "planned_reward_usd DECIMAL(20, 2)"
         ];
 
         for (const colDef of columns) {
@@ -546,11 +561,15 @@ app.post('/api/trades', async (req, res) => {
                 leverage, risk_percentage, notes, emotional_notes,
                 tags, screenshots, partials,
                 is_deleted, deleted_at, is_balance_updated,
-                final_stop_loss, final_take_profit
+                final_stop_loss, final_take_profit,
+                quote_currency, fx_rate_to_usd,
+                planned_risk_quote, planned_reward_quote,
+                planned_risk_usd, planned_reward_usd
             ) VALUES (
                 $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15,
                 $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27, $28,
-                $29, $30, $31, $32, $33, $34, $35, $36
+                $29, $30, $31, $32, $33, $34, $35, $36,
+                $37, $38, $39, $40, $41, $42
             ) ON CONFLICT (id) DO UPDATE SET
                 symbol = EXCLUDED.symbol, type = EXCLUDED.type, status = EXCLUDED.status, outcome = EXCLUDED.outcome,
                 entry_price = EXCLUDED.entry_price, exit_price = EXCLUDED.exit_price, 
@@ -563,7 +582,10 @@ app.post('/api/trades', async (req, res) => {
                 notes = EXCLUDED.notes, emotional_notes = EXCLUDED.emotional_notes,
                 tags = EXCLUDED.tags, screenshots = EXCLUDED.screenshots, partials = EXCLUDED.partials,
                 is_deleted = EXCLUDED.is_deleted, deleted_at = EXCLUDED.deleted_at, is_balance_updated = EXCLUDED.is_balance_updated,
-                final_stop_loss = EXCLUDED.final_stop_loss, final_take_profit = EXCLUDED.final_take_profit
+                final_stop_loss = EXCLUDED.final_stop_loss, final_take_profit = EXCLUDED.final_take_profit,
+                quote_currency = EXCLUDED.quote_currency, fx_rate_to_usd = EXCLUDED.fx_rate_to_usd,
+                planned_risk_quote = EXCLUDED.planned_risk_quote, planned_reward_quote = EXCLUDED.planned_reward_quote,
+                planned_risk_usd = EXCLUDED.planned_risk_usd, planned_reward_usd = EXCLUDED.planned_reward_usd
         `;
         
         await client.query(queryText, mapTradeToParams(t));
@@ -733,13 +755,16 @@ app.post('/api/trades/batch', async (req, res) => {
                 id, account_id, symbol, type, status, outcome, entry_price, exit_price, stop_loss, take_profit, quantity,
                 fees, main_pnl, pnl, balance, created_at, entry_date, exit_date, entry_time, exit_time, entry_session,
                 exit_session, order_type, setup, leverage, risk_percentage, notes, emotional_notes, tags, screenshots,
-                partials, is_deleted, deleted_at, is_balance_updated, final_stop_loss, final_take_profit
+                partials, is_deleted, deleted_at, is_balance_updated, final_stop_loss, final_take_profit,
+                quote_currency, fx_rate_to_usd, planned_risk_quote, planned_reward_quote,
+                planned_risk_usd, planned_reward_usd
             )
             VALUES (
                 $1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,
                 $12,$13,$14,$15,$16,$17,$18,$19,$20,$21,
                 $22,$23,$24,$25,$26,$27,$28,$29,$30,
-                $31,$32,$33,$34,$35,$36
+                $31,$32,$33,$34,$35,$36,
+                $37,$38,$39,$40,$41,$42
             )
             ON CONFLICT (id) DO UPDATE SET
                 account_id=EXCLUDED.account_id, symbol=EXCLUDED.symbol, type=EXCLUDED.type, status=EXCLUDED.status,
@@ -753,7 +778,10 @@ app.post('/api/trades/batch', async (req, res) => {
                 emotional_notes=EXCLUDED.emotional_notes, tags=EXCLUDED.tags, screenshots=EXCLUDED.screenshots,
                 partials=EXCLUDED.partials, is_deleted=EXCLUDED.is_deleted, deleted_at=EXCLUDED.deleted_at,
                 is_balance_updated=EXCLUDED.is_balance_updated, final_stop_loss=EXCLUDED.final_stop_loss,
-                final_take_profit=EXCLUDED.final_take_profit
+                final_take_profit=EXCLUDED.final_take_profit,
+                quote_currency=EXCLUDED.quote_currency, fx_rate_to_usd=EXCLUDED.fx_rate_to_usd,
+                planned_risk_quote=EXCLUDED.planned_risk_quote, planned_reward_quote=EXCLUDED.planned_reward_quote,
+                planned_risk_usd=EXCLUDED.planned_risk_usd, planned_reward_usd=EXCLUDED.planned_reward_usd
         `;
 
         for (const t of trades) {

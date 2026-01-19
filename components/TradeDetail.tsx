@@ -11,6 +11,8 @@ import { generateId } from '../utils/idUtils';
 import { uploadImage, deleteBlobImages } from '../services/storageService';
 import { getBaseQuote } from '../utils/symbol';
 import PlannedMoney from './PlannedMoney';
+import { getFxRateToUSD } from '../services/fxService';
+import { computePlannedValuesForSave } from '../utils/tradeCalc';
 
 const SectionHeader = ({ title }: { title: string }) => (
   <h3 className="text-xs font-bold text-primary uppercase tracking-wider mb-3">{title}</h3>
@@ -128,8 +130,6 @@ const TradeDetail: React.FC<TradeDetailProps> = ({ trade, accounts, tagGroups, s
     let netPnlValue = 0; 
 
     // Net PnL = Main + Partials - Fees
-    // Logic: If mainPnl is entered, we can calculate full Net. 
-    // If only partials exist, Net = Partials - Fees.
     
     if (hasMainPnl) {
         netPnlValue = mainPnlVal + partialsTotal - feesVal;
@@ -190,7 +190,46 @@ const TradeDetail: React.FC<TradeDetailProps> = ({ trade, accounts, tagGroups, s
   const slPips = getPips(formData.stopLoss);
   const tpPips = getPips(formData.takeProfit);
 
-  const performSave = (currentFormData: any, currentFinancials: any) => {
+  // Helper to determine if we need to fetch/recalc FX values
+  const getPlannedValuesForSave = async (snapshot: any) => {
+      const isDirty = (
+          trade.symbol !== snapshot.symbol ||
+          Number(trade.entryPrice || 0) !== Number(snapshot.entryPrice || 0) ||
+          Number(trade.stopLoss || 0) !== Number(snapshot.stopLoss || 0) ||
+          Number(trade.takeProfit || 0) !== Number(snapshot.takeProfit || 0) ||
+          Number(trade.quantity || 0) !== Number(snapshot.quantity || 0)
+      );
+
+      if (!isDirty) {
+          return {
+              quoteCurrency: trade.quoteCurrency,
+              fxRateToUsd: trade.fxRateToUsd,
+              plannedRiskQuote: trade.plannedRiskQuote,
+              plannedRewardQuote: trade.plannedRewardQuote,
+              plannedRiskUsd: trade.plannedRiskUsd,
+              plannedRewardUsd: trade.plannedRewardUsd
+          };
+      }
+
+      const info = getBaseQuote(snapshot.symbol);
+      const quote = info ? info.quote : 'USD';
+      let rate = 1;
+
+      if (quote !== 'USD') {
+          // If symbol hasn't changed and we have a valid stored rate, reuse it (no fetch)
+          if (snapshot.symbol === trade.symbol && trade.fxRateToUsd && trade.fxRateToUsd > 0) {
+              rate = trade.fxRateToUsd;
+          } else {
+              // Only fetch if symbol changed OR legacy trade didn't have a rate
+              const fetched = await getFxRateToUSD(quote);
+              if (fetched) rate = fetched;
+          }
+      }
+      
+      return computePlannedValuesForSave(snapshot, rate);
+  };
+
+  const performSave = async (currentFormData: any, currentFinancials: any) => {
       const net = currentFinancials.netPnlValue;
       let status = TradeStatus.OPEN;
       
@@ -222,6 +261,9 @@ const TradeDetail: React.FC<TradeDetailProps> = ({ trade, accounts, tagGroups, s
       const finalStopLoss = parseFloat(currentFormData.finalStopLoss) || undefined;
       const mainPnl = currentFormData.mainPnl === '' ? undefined : parseFloat(currentFormData.mainPnl);
 
+      // Smart calculation of planned values (minimizes API calls)
+      const plannedValues = await getPlannedValuesForSave(currentFormData);
+
       const updatedTrade: Trade = {
           ...currentFormData,
           tags: updatedTags, 
@@ -236,7 +278,8 @@ const TradeDetail: React.FC<TradeDetailProps> = ({ trade, accounts, tagGroups, s
           mainPnl,
           pnl: net,
           status,
-          isBalanceUpdated: currentFormData.isBalanceUpdated
+          isBalanceUpdated: currentFormData.isBalanceUpdated,
+          ...plannedValues
       };
       
       // Auto-save does not impact balance
@@ -266,8 +309,6 @@ const TradeDetail: React.FC<TradeDetailProps> = ({ trade, accounts, tagGroups, s
           performSave(formData, calculatedFinancials);
       }, 1000);
 
-      // Cleanup: Only clear the timeout. Do NOT save here.
-      // This prevents saving on every keystroke (re-render cleanup).
       return () => {
           if (saveTimeoutRef.current) clearTimeout(saveTimeoutRef.current);
       };
@@ -277,7 +318,6 @@ const TradeDetail: React.FC<TradeDetailProps> = ({ trade, accounts, tagGroups, s
   useEffect(() => {
       return () => {
           if (saveTimeoutRef.current) clearTimeout(saveTimeoutRef.current);
-          // Only save on unmount if we have actually started editing (not first render)
           if (!isFirstRender.current) {
               performSaveRef.current(formDataRef.current, financialsRef.current);
           }
@@ -395,7 +435,7 @@ const TradeDetail: React.FC<TradeDetailProps> = ({ trade, accounts, tagGroups, s
     setFormData((prev: any) => ({ ...prev, [field]: value }));
   };
 
-  const handleConfirmReopen = () => {
+  const handleConfirmReopen = async () => {
       let reverseAmount = 0;
       if (formData.isBalanceUpdated) {
           // Revert balance: subtract the PnL that was added
@@ -411,11 +451,18 @@ const TradeDetail: React.FC<TradeDetailProps> = ({ trade, accounts, tagGroups, s
       setFormData(updatedForm);
       setIsReopenModalOpen(false);
       
-      const tradeToSave = { ...updatedForm, pnl: 0, status: TradeStatus.OPEN };
+      const plannedValues = await getPlannedValuesForSave(updatedForm);
+      
+      const tradeToSave = { 
+          ...updatedForm, 
+          pnl: 0, 
+          status: TradeStatus.OPEN,
+          ...plannedValues
+      };
       onSave(tradeToSave, false, reverseAmount);
   };
 
-  const handleConfirmMissed = () => {
+  const handleConfirmMissed = async () => {
       let reverseAmount = 0;
       if (formData.outcome === TradeOutcome.CLOSED && formData.isBalanceUpdated) {
           reverseAmount = formData.pnl * -1;
@@ -432,6 +479,8 @@ const TradeDetail: React.FC<TradeDetailProps> = ({ trade, accounts, tagGroups, s
       setFormData(updatedForm);
       setIsMissedModalOpen(false);
 
+      const plannedValues = await getPlannedValuesForSave(updatedForm);
+
       const tradeToSave: Trade = {
           ...updatedForm,
           entryPrice: parseFloat(updatedForm.entryPrice),
@@ -443,12 +492,13 @@ const TradeDetail: React.FC<TradeDetailProps> = ({ trade, accounts, tagGroups, s
           mainPnl: undefined,
           partials: [],
           pnl: 0,
-          status: TradeStatus.MISSED
+          status: TradeStatus.MISSED,
+          ...plannedValues
       };
       onSave(tradeToSave, false, reverseAmount);
   };
 
-  const handleCloseModalConfirm = (closedData: any) => {
+  const handleCloseModalConfirm = async (closedData: any) => {
       const updatedFormData = {
           ...formData,
           ...closedData,
@@ -481,6 +531,8 @@ const TradeDetail: React.FC<TradeDetailProps> = ({ trade, accounts, tagGroups, s
       });
       updatedFormData.tags = updatedTags;
 
+      const plannedValues = await getPlannedValuesForSave(updatedFormData);
+
       const finalTradeToSave: Trade = {
         ...updatedFormData,
         entryPrice: parseFloat(updatedFormData.entryPrice),
@@ -493,7 +545,8 @@ const TradeDetail: React.FC<TradeDetailProps> = ({ trade, accounts, tagGroups, s
         finalStopLoss: updatedFormData.finalStopLoss ? parseFloat(updatedFormData.finalStopLoss) : undefined,
         mainPnl: updatedFormData.mainPnl === '' ? undefined : parseFloat(updatedFormData.mainPnl),
         pnl: net,
-        status
+        status,
+        ...plannedValues
       };
 
       // Calculate DELTA for balance update to support re-editing
@@ -828,7 +881,8 @@ const TradeDetail: React.FC<TradeDetailProps> = ({ trade, accounts, tagGroups, s
                               <div className="h-[34px] flex items-center px-2 text-sm font-medium border border-border/40 rounded-md text-textMain">
                                   <PlannedMoney 
                                       quoteAmount={calculatedFinancials.plannedReward} 
-                                      quoteCurrency={calculatedFinancials.quoteCurrency} 
+                                      quoteCurrency={calculatedFinancials.quoteCurrency}
+                                      precalculatedUsd={trade.plannedRewardUsd}
                                       className="text-sm font-medium" 
                                   />
                               </div>

@@ -68,6 +68,61 @@ export const calculateQuantity = (
     return riskQuote / (dist * asset.contractSize);
 };
 
+export const computePlannedValuesForSave = (
+    form: {
+        symbol: string;
+        entryPrice: number | string;
+        stopLoss?: number | string;
+        takeProfit?: number | string;
+        quantity: number | string;
+    },
+    fxRate: number | null
+) => {
+    const asset = ASSETS.find(a => a.assetPair === form.symbol);
+    const quoteInfo = getBaseQuote(form.symbol);
+    const quoteCurrency = quoteInfo ? quoteInfo.quote : 'USD';
+    const isUsd = quoteCurrency === 'USD';
+    
+    // Default rate to 1 if USD, otherwise use provided rate (or null if missing)
+    const finalFxRate = isUsd ? 1 : fxRate;
+
+    const entry = parseFloat(String(form.entryPrice));
+    const sl = parseFloat(String(form.stopLoss));
+    const tp = parseFloat(String(form.takeProfit));
+    const qty = parseFloat(String(form.quantity));
+
+    let plannedRiskQuote: number | null = null;
+    let plannedRewardQuote: number | null = null;
+    let plannedRiskUsd: number | null = null;
+    let plannedRewardUsd: number | null = null;
+
+    if (asset && !isNaN(entry) && !isNaN(qty)) {
+        if (!isNaN(sl)) {
+            const riskDist = Math.abs(entry - sl);
+            plannedRiskQuote = riskDist * asset.contractSize * qty;
+            if (finalFxRate !== null) {
+                plannedRiskUsd = plannedRiskQuote * finalFxRate;
+            }
+        }
+        if (!isNaN(tp)) {
+            const rewardDist = Math.abs(tp - entry);
+            plannedRewardQuote = rewardDist * asset.contractSize * qty;
+            if (finalFxRate !== null) {
+                plannedRewardUsd = plannedRewardQuote * finalFxRate;
+            }
+        }
+    }
+
+    return {
+        quoteCurrency,
+        fxRateToUsd: finalFxRate,
+        plannedRiskQuote,
+        plannedRewardQuote,
+        plannedRiskUsd,
+        plannedRewardUsd
+    };
+};
+
 export const computeTradeMetrics = (
   form: {
     symbol: string;

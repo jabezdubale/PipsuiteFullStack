@@ -92,6 +92,10 @@ const TradeList: React.FC<TradeListProps> = ({ trades, selectedAccountId, onTrad
          return risk === 0 ? 0 : reward / risk;
       }
       if (key === 'plannedReward') {
+          // Use stored values if available to prevent calculation
+          if (trade.plannedRewardQuote !== undefined && trade.plannedRewardQuote !== null) {
+              return trade.plannedRewardQuote;
+          }
           const asset = ASSETS.find(a => a.assetPair === trade.symbol);
           if (!asset || !trade.entryPrice || !trade.takeProfit || !trade.quantity) return 0;
           const dist = Math.abs(trade.takeProfit - trade.entryPrice);
@@ -688,6 +692,18 @@ const TradeList: React.FC<TradeListProps> = ({ trades, selectedAccountId, onTrad
          return `1:${(reward / risk).toFixed(2)}`;
       }
       case 'plannedReward': {
+          // Use stored values if present to prevent re-render/fetch
+          if (trade.plannedRewardQuote !== undefined && trade.plannedRewardQuote !== null) {
+              const quote = trade.quoteCurrency || 'USD';
+              return (
+                  <PlannedMoney 
+                      quoteAmount={trade.plannedRewardQuote} 
+                      quoteCurrency={quote} 
+                      precalculatedUsd={trade.plannedRewardUsd}
+                  />
+              );
+          }
+
           const assetInfo = getBaseQuote(trade.symbol);
           const asset = ASSETS.find(a => a.assetPair === trade.symbol);
           if (!asset || !assetInfo || !trade.entryPrice || !trade.takeProfit || !trade.quantity) return '-';

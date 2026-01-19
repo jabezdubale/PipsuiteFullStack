@@ -122,6 +122,14 @@ export interface Trade {
   // Trash / Soft Delete functionality
   isDeleted?: boolean;
   deletedAt?: string;
+
+  // Stored Conversions & Metrics
+  quoteCurrency?: string | null;
+  fxRateToUsd?: number | null;
+  plannedRiskQuote?: number | null;
+  plannedRewardQuote?: number | null;
+  plannedRiskUsd?: number | null;
+  plannedRewardUsd?: number | null;
 }
 
 export interface TradeStats {

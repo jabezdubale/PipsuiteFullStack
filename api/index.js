@@ -366,12 +366,49 @@ app.post('/api/users', async (req, res) => {
 
 app.delete('/api/users/:id', async (req, res) => {
     const { id } = req.params;
+    const client = await req.db.connect();
     try {
-        await req.db.query('DELETE FROM users WHERE id = $1', [id]);
-        const result = await req.db.query('SELECT * FROM users ORDER BY created_at ASC');
+        await client.query('BEGIN');
+
+        // 1. Get Accounts to identify trades and blobs
+        const accRes = await client.query('SELECT id FROM accounts WHERE user_id = $1', [id]);
+        const accountIds = accRes.rows.map(r => r.id);
+
+        if (accountIds.length > 0) {
+            // 2. Get Screenshots from Trades (for blob cleanup)
+            //    We must do this before deleting accounts because deleting accounts cascades to trades.
+            const tradeRes = await client.query('SELECT screenshots FROM trades WHERE account_id = ANY($1)', [accountIds]);
+            
+            let urlsToDelete = [];
+            tradeRes.rows.forEach(row => {
+                if (Array.isArray(row.screenshots)) {
+                    urlsToDelete = urlsToDelete.concat(row.screenshots);
+                }
+            });
+
+            // 3. Delete Blobs (Best effort, non-blocking on failure)
+            if (urlsToDelete.length > 0) {
+                await deleteBlobImages(urlsToDelete);
+            }
+
+            // 4. Delete Accounts
+            //    Trades reference accounts with ON DELETE CASCADE, so they will be removed automatically.
+            await client.query('DELETE FROM accounts WHERE user_id = $1', [id]);
+        }
+
+        // 5. Delete User
+        await client.query('DELETE FROM users WHERE id = $1', [id]);
+
+        await client.query('COMMIT');
+
+        const result = await client.query('SELECT * FROM users ORDER BY created_at ASC');
         res.json(result.rows.map(toCamelCase));
     } catch (err) {
+        await client.query('ROLLBACK');
+        console.error("Delete user failed:", err);
         res.status(500).json({ error: err.message });
+    } finally {
+        client.release();
     }
 });
 
